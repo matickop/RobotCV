@@ -1,0 +1,2 @@
+Version: 1.11.1
+Arguments: ['C:\\Users\\gitlab-runner\\AppData\\Local\\Temp\\cibw-run-hmzikw7f\\cp311-win_amd64\\build\\venv\\Scripts\\delvewheel', 'repair', '--add-path', 'C:/Local/boost/lib', '-w', 'C:\\Users\\gitlab-runner\\AppData\\Local\\Temp\\cibw-run-hmzikw7f\\cp311-win_amd64\\repaired_wheel', 'C:\\Users\\gitlab-runner\\AppData\\Local\\Temp\\cibw-run-hmzikw7f\\cp311-win_amd64\\built_wheel\\ur_rtde-1.6.2-cp311-cp311-win_amd64.whl']
