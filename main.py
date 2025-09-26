@@ -142,7 +142,7 @@ while True:
                 idx = int(idx)
                 print(idx)
                 kot = int(kot)
-                print(kot)git 
+                print(kot)
 
                 #gre samo nad tocko kamor bi postavil sliko
                 if flat_map[idx] is not None:
