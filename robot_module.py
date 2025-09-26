@@ -19,8 +19,15 @@ class MyRobot:
         # parametri
         self.acc = 0.2
         self.vel = 0.4
-        self.paleta1 = None
-        self.paleta2 = None
+        try:
+            self.paleta1 = np.load("mreza_paleta1.npy")
+            self.paleta2 = np.load("mreza_paleta2.npy")
+            print("Obe mreži za paleti sta naloženi")
+        except:
+            print("Nobene mreže nimaš shranjene")
+            self.paleta1 = None
+            self.paleta2 = None
+            pass
         self.kamera_y = 0.098348
         self.safe_z = 0.04
         self.work_z = 0.0098
@@ -34,7 +41,9 @@ class MyRobot:
                         math.radians(0)]
         self.payload_mass = 1.15
         self.cog = [0, -0.004, 0.045]
-        
+        self.inital_tcp_rotation = np.array([0, 3.14, 0])
+        self.tcp_rotation_paleta1 = None
+        self.tcp_rotation_paleta2 = None 
         self.rtde_c.setPayload(self.payload_mass, self.cog)
 
     def reconnect(self, host="192.168.1.102"):
@@ -101,15 +110,38 @@ class MyRobot:
         new_rotvec = Rnew.as_rotvec()
         return np.concatenate((pos, new_rotvec))
 
-    def generiranje_mreze(self, a, b, koti):
+    def generiranje_mreze(self, a, b, koti, paleta):
         poz = np.zeros((a, b, 6))
         zl, zd, sl, sd = koti
+
+        #rotacija mreze okoli koordinatnega sistema robota
+        vektor_x = (sl[:2] - zl[:2])
+        vektor_x /= np.linalg.norm(vektor_x)
+
+        rotacija_mreze = np.degrees(np.arctan2(vektor_x[1], vektor_x[0]))
+        R0 = R.from_rotvec(self.inital_tcp_rotation)
+        Rz = R.from_euler("z", rotacija_mreze, degrees=True)
+        Rnew = Rz*R0 
+        new_rotvec = Rnew.as_rotvec()
+        
+        if paleta == "1":
+            self.tcp_rotation_paleta1 = new_rotvec
+            tcp_rot = self.tcp_rotation_paleta1
+        elif paleta == "2":
+            self.tcp_rotation_paleta2 = new_rotvec
+            tcp_rot = self.tcp_rotation_paleta2
+        print(f"TCP rotacija okoli palete1 je: {self.tcp_rotation_paleta1}")
+        print(f"TCP rotacija okoli palete2 je: {self.tcp_rotation_paleta2}")
+        #generacija mreze palet
         for i in range(a):
             v_left = zl - (zl - sl)*(i/(a-1))
             v_right = zd - (zd - sd)*(i/(a-1))
             for j in range(b):
                 poz[i,j] = v_left + (v_right - v_left)*(j/(b - 1))
-                poz[i,j][2:] = np.array([0.0095, 0, 3.14, 0])
+                poz[i,j][2] = 0.0095
+                poz[i,j][3:] = tcp_rot
+
+
 
         return poz
 
@@ -238,13 +270,13 @@ class MyRobot:
 
 
 
-
     def move_to_position(self, position):
         position[2] = self.safe_z
         self.rtde_c.moveL(position, self.acc, self.vel)
 
     def pick_and_place_position(self, position):
         position[2] = self.work_z
+        self.rtde_c.moveL(position, self.acc, self.vel)
 
     def move_to_kamera_position(self, position):
         position[1] = position[1] + self.kamera_y

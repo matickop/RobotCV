@@ -3,6 +3,7 @@ import cv2
 import numpy as np
 from pypylon import pylon
 import timeit
+from pypylon import genicam
 
 
 class MyCamera:
@@ -123,4 +124,3 @@ class MyCamera:
     def connect(self):
         """Odpre kamero"""
         self.cam.Open()
-

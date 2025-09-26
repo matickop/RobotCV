@@ -21,6 +21,7 @@ layout = [
     [sg.Text("Robot control:")],
     [sg.Button("Reconnect", s=14)],
     [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14), sg.B("Pobiranje koščkov s kamero")],
+    [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2")],
     [sg.Text("Camera control:")],
     [sg.Button("Zajem slike", s=14), sg.B("Template matching", s=14), sg.B("Disconnect camera", s=14), sg.B("Connect camera", s=14)],
     [sg.Text("Prva paleta:")],
@@ -70,7 +71,7 @@ while True:
             sg.popup("Najprej poberi vse kote prve palete!")
             continue
                 # generiranje mreže za paleto 1
-        robot.paleta1 = robot.generiranje_mreze(4, 6, pobrani_koti[:4])
+        robot.paleta1 = robot.generiranje_mreze(4, 6, pobrani_koti[:4], "1")
         sg.popup("Mreža palete 1 generirana!")
 
     elif event == "Generiraj mrežo palete 2":
@@ -79,7 +80,7 @@ while True:
             continue
 
         # generiranje mreže za paleto 2
-        robot.paleta2 = robot.generiranje_mreze(4, 6, pobrani_koti[4:])
+        robot.paleta2 = robot.generiranje_mreze(4, 6, pobrani_koti[4:], "2")
         sg.popup("Mreža palete 2 generirana!")
 
     elif event == "Shrani paleto 1":
@@ -127,13 +128,36 @@ while True:
                 paleta2_p = robot.paleta2[i,j].copy()
 
                 # Gre na safe pozicijo nad koscek z koordinato kamere --> offset v x,y,z
-                robot.move_to_kamera_position(paleta1_p)
+                robot.move_to_kamera_position(paleta2_p)
                 # Zajame sliko
                 cam.capture_image()
                 # Obdela sliko in vrne pozicijo v matriki + rotacijo --> iz mreze paleta 1 vzame pravilno lokacijo
-                cam.template_match(cam.template_path, show=False)
-                # Iz place
+                slika, score_match = cam.template_match(cam.template_path, show=False)
+                slika = slika.split(".")[0]
+                idx, kot = slika.split("_")
+                idx = int(idx)
+                print(idx)
+                kot = int(kot)
+                print(kot)
+                #gre z gripperjem nad rezo slike
+                robot.move_to_position(robot.paleta2[i, j])
+                #tle bi sou dol ampak se ne more
 
+                #gre samo nad tocko kamor bi postavil sliko
+                flat_map = [[i, j] for i in range(robot.paleta1.shape[0]) for j in range(robot.paleta1.shape[1])]
+                row, col = flat_map[idx]
+                robot.move_to_position(robot.paleta1[row, col])
+                #place-a sliko
+                robot.pick_and_place_position(robot.paleta1[row,col])
+                #se vrne nad sliko
+                robot.move_to_position(robot.paleta1[row,col])
 
         #homing nazaj
         robot.homing()
+
+    if event == "Izhodiščna točka palete 1":
+        robot.move_to_position(robot.paleta1[0,0])
+        print(robot.paleta1[0,0])
+
+    if event == "Izhodiščna točka palete 2":
+        robot.move_to_position(robot.paleta2[0,0])
