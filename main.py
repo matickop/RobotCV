@@ -121,6 +121,8 @@ while True:
         robot.gripper.activate()
         robot.gripper.move_and_wait_for_pos(229, speed=180, force=2)
         print("Gripper closed")
+        #kreiram array za pozicije slike v paleti --> array z [0,0]...[3,5]
+        flat_map = [[i, j] for i in range(robot.paleta1.shape[0]) for j in range(robot.paleta1.shape[1])]
         #zanka za zajem slike in vse ostalo :D
         for i in range(robot.paleta1.shape[0]):
             for j in range(robot.paleta1.shape[1]):
@@ -129,8 +131,10 @@ while True:
 
                 # Gre na safe pozicijo nad koscek z koordinato kamere --> offset v x,y,z
                 robot.move_to_kamera_position(paleta2_p)
+
                 # Zajame sliko
                 cam.capture_image()
+
                 # Obdela sliko in vrne pozicijo v matriki + rotacijo --> iz mreze paleta 1 vzame pravilno lokacijo
                 slika, score_match = cam.template_match(cam.template_path, show=False)
                 slika = slika.split(".")[0]
@@ -138,20 +142,26 @@ while True:
                 idx = int(idx)
                 print(idx)
                 kot = int(kot)
-                print(kot)
-                #gre z gripperjem nad rezo slike
-                robot.move_to_position(robot.paleta2[i, j])
-                #tle bi sou dol ampak se ne more
+                print(kot)git 
 
                 #gre samo nad tocko kamor bi postavil sliko
-                flat_map = [[i, j] for i in range(robot.paleta1.shape[0]) for j in range(robot.paleta1.shape[1])]
-                row, col = flat_map[idx]
-                robot.move_to_position(robot.paleta1[row, col])
-                #place-a sliko
-                robot.pick_and_place_position(robot.paleta1[row,col])
-                #se vrne nad sliko
-                robot.move_to_position(robot.paleta1[row,col])
+                if flat_map[idx] is not None:
+                    #ce ni None gre nad rezo slikice drgac pa skipa naprej
+                    robot.move_to_position(robot.paleta2[i, j])
 
+                    #tuki pa potem gre na pozicijo kam bi jo postavu
+                    row, col = flat_map[idx]
+                    robot.move_to_position(robot.paleta1[row, col])
+                    #place-a sliko
+                    robot.pick_and_place_position(robot.paleta1[row,col])
+                    #se vrne nad sliko
+                    robot.move_to_position(robot.paleta1[row,col])
+                    
+                    #ko polozi sliko, se v matriki pozicij namesto indeksov appenda None
+                    flat_map[idx] = None
+                else:
+                    print("Slike ni mogoce postaviti na zapolnjeno mesto")
+                
         #homing nazaj
         robot.homing()
 
