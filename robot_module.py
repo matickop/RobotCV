@@ -18,7 +18,9 @@ class MyRobot:
         self.gripper.connect(host, 63352)
         # parametri
         self.acc = 0.2
+        self.accq = 0.4
         self.vel = 0.4
+        self.velq = 0.6
         try:
             self.paleta1 = np.load("mreza_paleta1.npy")
             self.paleta2 = np.load("mreza_paleta2.npy")
@@ -74,7 +76,7 @@ class MyRobot:
         
 
     def homing(self):  
-        self.rtde_c.moveJ(self.home_p, self.acc, self.vel)
+        self.rtde_c.moveJ(self.home_p, self.accq, self.velq)
 
     def activate_freedrive(self):
         self.rtde_c.setPayload(self.payload_mass, self.cog)
@@ -133,6 +135,7 @@ class MyRobot:
         print(f"TCP rotacija okoli palete1 je: {self.tcp_rotation_paleta1}")
         print(f"TCP rotacija okoli palete2 je: {self.tcp_rotation_paleta2}")
         #generacija mreze palet
+        test = np.zeros(a, b, 6)
         for i in range(a):
             v_left = zl - (zl - sl)*(i/(a-1))
             v_right = zd - (zd - sd)*(i/(a-1))
@@ -141,8 +144,7 @@ class MyRobot:
                 poz[i,j][2] = 0.0095
                 poz[i,j][3:] = tcp_rot
 
-
-
+    
         return poz
 
     def generiranje_nakljucne_mreze(self, a, b, paleta):
@@ -152,20 +154,20 @@ class MyRobot:
         flat_poz = [grid[i, j].copy() for i in range(a) for j in range(b)]
         random.shuffle(flat_poz)
 
-        mozne_rot = [-90, 0, 90]
+        mozne_rot = [-np.pi/2, 0, np.pi/2, ]
 
         random_mreza = np.zeros_like(grid)
 
         idx = 0
         for i in range(a):
             for j in range(b):
-                p = flat_poz[idx]
-                idx += 1
-
+                pos = flat_poz[idx]
+                q_pos = self.rtde_c.getInverseKinematics(pos)
                 ang = random.choice(mozne_rot)
-                p_rot = self.rotate_pose_local_z(p, ang)
-                random_mreza[i, j] = p_rot
+                q_pos[5] += ang
+                random_mreza[i, j] = q_pos
 
+        
         return random_mreza
     
     def shuffling_kosckov(self, safe_z=0.04, work_z=0.0098):
@@ -270,18 +272,21 @@ class MyRobot:
 
 
 
-    def move_to_position(self, position):
+    def move_to_position(self, position): # "Varna" pozicija, z je vec kot dovolj visok
         position[2] = self.safe_z
-        self.rtde_c.moveL(position, self.acc, self.vel)
+        q_position = self.rtde_c.getInverseKinematics(position)
+        self.rtde_c.moveJ(q_position, self.accq, self.velq)
 
-    def pick_and_place_position(self, position):
+    def pick_and_place_position(self, position): # S to pozicijo se koscek pobere in odlozi
         position[2] = self.work_z
-        self.rtde_c.moveL(position, self.acc, self.vel)
+        q_position = self.rtde_c.getInverseKinematics(position)
+        self.rtde_c.moveJ(q_position, self.acc, self.vel)
 
-    def move_to_kamera_position(self, position):
+    def move_to_kamera_position(self, position): # Pozicija kamera glede z offsetom v x(in y) in zadostna visina
         position[1] = position[1] + self.kamera_y
         position[2] = self.kamera_z
-        self.rtde_c.moveL(position, self.acc, self.vel)
+        q_position = self.rtde_c.getInverseKinematics(position)
+        self.rtde_c.moveJ(q_position, self.accq, self.velq)
 
     def gripper_open(self):
         self.gripper.move_and_wait_for_pos(211, speed=150, force=2)

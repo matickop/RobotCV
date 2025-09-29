@@ -31,6 +31,7 @@ layout = [
     [sg.Multiline("", size=(70,10), key="-KOTI-", disabled=True)],
     [sg.Button("Generiraj mrežo palete 1", s=18), sg.Button("Shrani paleto 1", s=14), sg.Button("Naloži paleto 1", s=14)],
     [sg.Button("Generiraj mrežo palete 2", s=18), sg.Button("Shrani paleto 2", s=14), sg.Button("Naloži paleto 2", s=14)],
+    [sg.B("Generacija random mreže")],
 ]
 
 window = sg.Window("RobotCV GUI", layout, resizable=True, finalize=True)
@@ -92,6 +93,11 @@ while True:
     elif event == "Naloži paleto 1":
         robot.paleta1 = np.load("mreza_paleta1.npy")
         print(robot.paleta1)
+        test = np.zeros_like(robot.paleta1)
+        for i in range(robot.paleta1.shape[0]):
+            for j in range(robot.paleta1.shape[1]):
+                test[i,j] = robot.rtde_c.getInverseKinematics(robot.paleta1[i, j])
+        print(test)
 
     elif event == "Naloži paleto 2":
         robot.paleta2 = np.load("mreza_paleta2.npy")
@@ -99,6 +105,23 @@ while True:
 
     if event == "Shuffle kosckov":
         robot.shuffling_kosckov()
+
+
+        random_paleta2 = self.generiranje_nakljucne_mreze(self.paleta2.shape[0],    
+                                                           self.paleta2.shape[1],   
+                                                           self.paleta2)
+        self.homing()
+        print("homing")
+        self.gripper.activate()
+        print("gripper activated")
+        self.gripper.move_and_wait_for_pos(229, speed=180, force=2)
+
+        for i in range(self.paleta1.shape[0]):
+            for j in range(self.paleta1.shape[1]):
+                #
+                
+
+
 
     if event == "Zajem slike":
         cam.capture_image()
@@ -161,13 +184,20 @@ while True:
                     flat_map[idx] = None
                 else:
                     print("Slike ni mogoce postaviti na zapolnjeno mesto")
+                    
                 
         #homing nazaj
         robot.homing()
 
+    if event == "Generacija random mreže":
+        robot.generiranje_nakljucne_mreze(robot.paleta2.shape[0], robot.paleta2.shape[1], robot.paleta2)
+        print(robot.generiranje_nakljucne_mreze(robot.paleta2.shape[0], robot.paleta2.shape[1], robot.paleta2))
+
     if event == "Izhodiščna točka palete 1":
         robot.move_to_position(robot.paleta1[0,0])
         print(robot.paleta1[0,0])
+        print(robot.rtde_r.getActualQ())
+        print(robot.rtde_c.getInverseKinematics(robot.paleta1[0,0]))
 
     if event == "Izhodiščna točka palete 2":
         robot.move_to_position(robot.paleta2[0,0])
