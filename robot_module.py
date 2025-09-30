@@ -1,4 +1,4 @@
-import time
+import os
 import math
 import numpy as np
 import rtde_control
@@ -6,6 +6,7 @@ import rtde_receive
 import random
 import robotiq_gripper
 from scipy.spatial.transform import Rotation as R
+import time
 
 
 class MyRobot:
@@ -21,15 +22,15 @@ class MyRobot:
         self.accq = 0.4
         self.vel = 0.4
         self.velq = 0.6
-        try:
-            self.paleta1 = np.load("mreza_paleta1.npy")
-            self.paleta2 = np.load("mreza_paleta2.npy")
-            print("Obe mreži za paleti sta naloženi")
-        except:
-            print("Nobene mreže nimaš shranjene")
-            self.paleta1 = None
-            self.paleta2 = None
-            pass
+        self._load_paleta(1) #atributi se shranijo v 3 palete glede na z offset, vse so pretvorjene v joint space:    
+                            # paleta1_safe/_joint, paleta1_work/_joint, paleta1_kam/joint 
+        self._load_paleta(2)# isto sam da so paleta2_xsdasdsad
+
+        if os.path.exists("koti.npy"):
+            self.pobrani_koti = np.load("koti.npy", allow_pickle=True).tolist()
+        else:
+            self.pobrani_koti = [None] * 8
+
         self.kamera_y = 0.098348
         self.safe_z = 0.04
         self.work_z = 0.0098
@@ -48,7 +49,11 @@ class MyRobot:
         self.tcp_rotation_paleta2 = None 
         self.rtde_c.setPayload(self.payload_mass, self.cog)
 
-    def reconnect(self, host="192.168.1.102"):
+        self.homing()
+        time.sleep(0.5)
+        self.gripper.activate()
+        time.sleep(3)
+    def reconnect(self, host="192.168.3.102"):
         try:
             try:
                 self.rtde_c.disconnect()
@@ -73,10 +78,26 @@ class MyRobot:
             print(f"Reconnect failed {e}")
             return False
    
-        
+    def _load_paleta(self, ime):
+        """Naloži vse mreže za paleto (1 ali 2) in nastavi atribute self.paletaX_safe, ..."""
+        suffixes = ["safe", "work", "kam"]
+        for suf in suffixes:
+            try:
+                pose = np.load(f"mreza_paleta{ime}_{suf}.npy")
+                joints = np.load(f"mreza_paleta{ime}_{suf}_joint.npy")
+            except FileNotFoundError:
+                pose, joints = None, None
+            # nastavi atribute, npr. self.paleta1_safe, self.paleta1_safe_joint
+            setattr(self, f"paleta{ime}_{suf}", pose)
+            setattr(self, f"paleta{ime}_{suf}_joint", joints)
+
 
     def homing(self):  
         self.rtde_c.moveJ(self.home_p, self.accq, self.velq)
+
+    def initialize(self):
+        self.homing()
+        self.gripper.activate()
 
     def activate_freedrive(self):
         self.rtde_c.setPayload(self.payload_mass, self.cog)
@@ -114,7 +135,7 @@ class MyRobot:
 
     def generiranje_mreze(self, a, b, koti, paleta):
         poz = np.zeros((a, b, 6))
-        zl, zd, sl, sd = koti
+        zl, zd, sl, sd = [np.array(k, dtype=float) for k in koti]
 
         #rotacija mreze okoli koordinatnega sistema robota
         vektor_x = (sl[:2] - zl[:2])
@@ -132,10 +153,14 @@ class MyRobot:
         elif paleta == "2":
             self.tcp_rotation_paleta2 = new_rotvec
             tcp_rot = self.tcp_rotation_paleta2
+
         print(f"TCP rotacija okoli palete1 je: {self.tcp_rotation_paleta1}")
         print(f"TCP rotacija okoli palete2 je: {self.tcp_rotation_paleta2}")
-        #generacija mreze palet
-        test = np.zeros(a, b, 6)
+
+        mreza_safe  = np.zeros((a, b, 6))
+        mreza_work  = np.zeros((a, b, 6))
+        mreza_kam   = np.zeros((a, b, 6))
+
         for i in range(a):
             v_left = zl - (zl - sl)*(i/(a-1))
             v_right = zd - (zd - sd)*(i/(a-1))
@@ -143,32 +168,116 @@ class MyRobot:
                 poz[i,j] = v_left + (v_right - v_left)*(j/(b - 1))
                 poz[i,j][2] = 0.0095
                 poz[i,j][3:] = tcp_rot
+                #safe
+                pos_safe = poz[i,j].copy()
+                pos_safe[2] = self.safe_z
+                mreza_safe[i, j] = pos_safe
+                
+                #work
+                pos_work = poz[i, j].copy()
+                pos_work[2] = self.work_z
+                mreza_work[i, j] = pos_work
 
+                #kamera
+                pos_kam = poz[i,j].copy()
+                pos_kam[1] += self.kamera_y
+                pos_kam[2] = self.kamera_z
+                mreza_kam[i, j] = pos_kam
+
+
+
+        return mreza_safe, mreza_work, mreza_kam
     
-        return poz
+    def pripravi_in_shrani_paleto(self, ime, koti, oznaka, a=4, b=6):
+        # generiranje mrež (pose)
+        safe, work, kam = self.generiranje_mreze(a, b, koti, oznaka)
+        # pretvorba v joint
+        safe_joint  = self.pretvori_v_joint_mreze(safe)
+        work_joint  = self.pretvori_v_joint_mreze(work)
+        kam_joint   = self.pretvori_v_joint_mreze(kam)
 
-    def generiranje_nakljucne_mreze(self, a, b, paleta):
-        """Koda naredi matriko nakljucnih pozicij"""
-        grid = paleta
+        # shrani
+        np.save(f"mreza_{ime}_safe.npy", safe)
+        np.save(f"mreza_{ime}_work.npy", work)
+        np.save(f"mreza_{ime}_kam.npy", safe)
 
-        flat_poz = [grid[i, j].copy() for i in range(a) for j in range(b)]
-        random.shuffle(flat_poz)
+        np.save(f"mreza_{ime}_safe_joint.npy", safe_joint)
+        np.save(f"mreza_{ime}_work_joint.npy", work_joint)
+        np.save(f"mreza_{ime}_kam_joint.npy", kam_joint)
 
-        mozne_rot = [-np.pi/2, 0, np.pi/2, ]
+        return safe, work, kam, safe_joint, work_joint, kam_joint
 
-        random_mreza = np.zeros_like(grid)
 
-        idx = 0
-        for i in range(a):
-            for j in range(b):
-                pos = flat_poz[idx]
-                q_pos = self.rtde_c.getInverseKinematics(pos)
-                ang = random.choice(mozne_rot)
-                q_pos[5] += ang
-                random_mreza[i, j] = q_pos
+    def pretvori_v_joint_mreze(self, mreza_pose):
+        """
+        Pretvori mrežo TCP pozicij v mrežo joint konfiguracij.
+        """
+        mreza_joint = np.zeros_like(mreza_pose)
+        q_seed = self.rtde_r.getActualQ()
 
-        
-        return random_mreza
+        for i in range(mreza_joint.shape[0]):
+            for j in range(mreza_joint.shape[1]):
+                q_target = self.rtde_c.getInverseKinematics(mreza_pose[i, j], q_seed)
+                # izberi varnega kandidata za wrist6
+                print("q_target type:", type(q_target), "q_target[5]:", q_target[5])
+                q_target[5] = self.pick_wrist6_candidate(q_target[5], q_seed[5])
+                mreza_joint[i, j] = q_target
+                q_seed = q_target  # seed za naslednjo točko
+
+        return mreza_joint 
+
+    def pick_wrist6_candidate(self, q6_target, q6_current, limit_deg=250, alpha=0.002):
+        # Evaluate q6_target + k*2π for k in {-1, 0, +1}
+        candidates = [q6_target + k*2*np.pi for k in (-1, 0, 1)]
+        def cost(q6):
+            dist = abs(q6 - q6_current)
+            # penalize proximity to soft limits (±limit_deg)
+            q6_deg = np.degrees(q6)
+            proximity = max(0.0, abs(q6_deg) - (limit_deg - 20))  # start penalizing near the edge
+            return dist + alpha * proximity
+        # choose the candidate with minimum cost, but discard those beyond hard limit
+        hard_limit_deg = 270
+        feasible = [c for c in candidates if abs(np.degrees(c)) <= hard_limit_deg]
+        if not feasible:
+            feasible = candidates
+        return min(feasible, key=cost)
+
+    def generiraj_random_joint_mreze(self, safe_joint, work_joint):
+        """
+        Sprejme dve obstoječi joint mreži (safe in work) in vrne
+        naključno premešani mreži, kjer ima vsaka točka še random rotacijo q6.
+        """
+        a, b, _ = safe_joint.shape
+        n = a * b
+
+        # splošči
+        flat_safe = safe_joint.reshape(n, 6).copy()
+        flat_work = work_joint.reshape(n, 6).copy()
+
+        # permutacija
+        perm = np.random.permutation(n)
+        flat_safe = flat_safe[perm]
+        flat_work = flat_work[perm]
+
+        # možne rotacije okoli zapestja
+        rotations = [-np.pi/2, 0.0, np.pi/2, np.pi]
+
+        q_seed = self.rtde_r.getActualQ()
+
+        for i in range(n):
+            ang = np.random.choice(rotations)
+
+            # dodaj rotacijo na q6 (joint 5 v Python indeksu = 5)
+            flat_safe[i][5] = self.pick_wrist6_candidate(flat_safe[i][5] + ang, q_seed[5])
+            flat_work[i][5] = self.pick_wrist6_candidate(flat_work[i][5] + ang, flat_safe[i][5])
+
+            q_seed = flat_safe[i]  # seed za naslednjo točko
+
+        # nazaj v obliko
+        random_safe = flat_safe.reshape(a, b, 6)
+        random_work = flat_work.reshape(a, b, 6)
+
+        return random_safe, random_work
     
     def shuffling_kosckov(self, safe_z=0.04, work_z=0.0098):
         """"Robot pobere kosckek na paleti 1 in ga postavni na naključno mesto na paleti2"""
@@ -270,12 +379,19 @@ class MyRobot:
 
                 # Iz place
 
-
-
-    def move_to_position(self, position): # "Varna" pozicija, z je vec kot dovolj visok
+    def move_with_random_rotation(self, position):
         position[2] = self.safe_z
         q_position = self.rtde_c.getInverseKinematics(position)
+        possible_rotation = [-np.pi/2, 0, np.pi/2, np.pi]
+        ang = random.choice(possible_rotation)
+        q_position[5] += ang
         self.rtde_c.moveJ(q_position, self.accq, self.velq)
+
+    def joint_move_to_position(self, position):
+        self.rtde_c.moveJ(position, self.accq, self.velq)
+
+    def move_to_position(self, position): # "Varna" pozicija, z je vec kot dovolj visok
+        self.rtde_c.moveJ(position, self.accq, self.velq)
 
     def pick_and_place_position(self, position): # S to pozicijo se koscek pobere in odlozi
         position[2] = self.work_z
@@ -289,11 +405,21 @@ class MyRobot:
         self.rtde_c.moveJ(q_position, self.accq, self.velq)
 
     def gripper_open(self):
-        self.gripper.move_and_wait_for_pos(211, speed=150, force=2)
+        self.gripper.move_and_wait_for_pos(211, speed=200, force=2)
 
     def gripper_close(self):
-        self.gripper.move_and_wait_for_pos(229, speed=150, force=2)
-        
+        self.gripper.move_and_wait_for_pos(229, speed=200, force=5)
+
+    def move_with_blend(self, positions, acc=1.2, vel=0.5, blend=0.01):
+        """
+        Izvede zaporedje joint pozicij z blendingom.
+        positions: seznam joint vektorjev (brez gripperja!)
+        """
+        path = []
+        for q in positions:
+            q = q.tolist() if hasattr(q, "tolist") else list(q)
+            path.append(q + [acc, vel, blend])
+        self.rtde_c.moveJ(path)        
 
     def disconnect(self):
         self.rtde_c.disconnect()

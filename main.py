@@ -19,7 +19,7 @@ pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
 layout = [
     [sg.Text("RobotCV GUI", font=("Helvetica", 24), expand_x=True, justification='center')],
     [sg.Text("Robot control:")],
-    [sg.Button("Reconnect", s=14)],
+    [sg.Button("Reconnect", s=14), sg.B("Activate gripper")],
     [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14), sg.B("Pobiranje koščkov s kamero")],
     [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2")],
     [sg.Text("Camera control:")],
@@ -29,8 +29,8 @@ layout = [
     [sg.Text("Druga paleta:")],
     [sg.Button(f"Kot {i+5}") for i in range(4)],
     [sg.Multiline("", size=(70,10), key="-KOTI-", disabled=True)],
-    [sg.Button("Generiraj mrežo palete 1", s=18), sg.Button("Shrani paleto 1", s=14), sg.Button("Naloži paleto 1", s=14)],
-    [sg.Button("Generiraj mrežo palete 2", s=18), sg.Button("Shrani paleto 2", s=14), sg.Button("Naloži paleto 2", s=14)],
+    [sg.Button("Generiraj mrežo palete 1", s=18), sg.Button("Naloži paleto 1", s=14)],
+    [sg.Button("Generiraj mrežo palete 2", s=18), sg.Button("Naloži paleto 2", s=14)],
     [sg.B("Generacija random mreže")],
 ]
 
@@ -44,6 +44,9 @@ while True:
     
     if event ==  "Home":
         robot.homing()
+
+    if event == "Activate gripper":
+        robot.gripper.activate()
 
     if event == "Reconnect":
         robot.reconnect()
@@ -59,69 +62,85 @@ while True:
     elif event.startswith("Kot"):
         idx = int(event.split(" ")[1])-1
         tcp = robot.get_actual_tcp_pose()
-        pobrani_koti[idx] = tcp.copy()
+        robot.pobrani_koti[idx] = tcp.copy()
+        np.save("koti.npy", np.array(robot.pobrani_koti, dtype=object))
         # osveži prikaz
         prikaz = ""
-        for i, k in enumerate(pobrani_koti):
+        for i, k in enumerate(robot.pobrani_koti):
             if k is not None:
                 prikaz += f"Kot {i+1}: {k}\n"
         window["-KOTI-"].update(prikaz)
 
     elif event == "Generiraj mrežo palete 1":
-        if any(k is None for k in pobrani_koti[:4]):
+        if any(k is None for k in robot.pobrani_koti[:4]):
             sg.popup("Najprej poberi vse kote prve palete!")
             continue
-                # generiranje mreže za paleto 1
-        robot.paleta1 = robot.generiranje_mreze(4, 6, pobrani_koti[:4], "1")
+        # generating
+        (robot.paleta1_safe,
+        robot.paleta1_work,
+        robot.paleta1_kam,
+        robot.paleta1_safe_joint,
+        robot.paleta1_work_joint,
+        robot.paleta1_kam_joint) = robot.pripravi_in_shrani_paleto("paleta1", robot.pobrani_koti[:4], "1")
         sg.popup("Mreža palete 1 generirana!")
 
     elif event == "Generiraj mrežo palete 2":
-        if any(k is None for k in pobrani_koti[4:]):
+        if any(k is None for k in robot.pobrani_koti[4:]):
             sg.popup("Najprej poberi vse kote druge palete!")
             continue
 
-        # generiranje mreže za paleto 2
-        robot.paleta2 = robot.generiranje_mreze(4, 6, pobrani_koti[4:], "2")
+        (robot.paleta2_safe,
+        robot.paleta2_work,
+        robot.paleta2_kam,
+        robot.paleta2_safe_joint,
+        robot.paleta2_work_joint,
+        robot.paleta2_kam_joint) = robot.pripravi_in_shrani_paleto("paleta2", robot.pobrani_koti[4:], "2")
         sg.popup("Mreža palete 2 generirana!")
 
-    elif event == "Shrani paleto 1":
-        np.save("mreza_paleta1.npy", robot.paleta1)
 
-    elif event == "Shrani paleto 2":
-        np.save("mreza_paleta2.npy", robot.paleta2)
 
-    elif event == "Naloži paleto 1":
-        robot.paleta1 = np.load("mreza_paleta1.npy")
-        print(robot.paleta1)
-        test = np.zeros_like(robot.paleta1)
-        for i in range(robot.paleta1.shape[0]):
-            for j in range(robot.paleta1.shape[1]):
-                test[i,j] = robot.rtde_c.getInverseKinematics(robot.paleta1[i, j])
-        print(test)
+    elif event == "Naloži palete 1":
+        robot._load_paleta(1)
+        sg.popup("Paleta 1 naložena")
 
-    elif event == "Naloži paleto 2":
-        robot.paleta2 = np.load("mreza_paleta2.npy")
-        print(robot.paleta2)
+    elif event == "Naloži palete 2":
+        robot._load_paleta(2)
+        sg.popup("Paleta 2 naložena!")
 
     if event == "Shuffle kosckov":
-        robot.shuffling_kosckov()
-
-
-        random_paleta2 = self.generiranje_nakljucne_mreze(self.paleta2.shape[0],    
-                                                           self.paleta2.shape[1],   
-                                                           self.paleta2)
-        self.homing()
+        random_safe, random_work = robot.generiraj_random_joint_mreze(robot.paleta2_safe_joint, robot.paleta2_work_joint)
+        robot.homing()
         print("homing")
-        self.gripper.activate()
-        print("gripper activated")
-        self.gripper.move_and_wait_for_pos(229, speed=180, force=2)
+        robot.gripper_close()
 
-        for i in range(self.paleta1.shape[0]):
-            for j in range(self.paleta1.shape[1]):
-                #
-                
+        for i in range(robot.paleta2_safe_joint.shape[0]):
+            for j in range(robot.paleta2_safe_joint.shape[1]):
+                #pot do koscka:
+                path = [
+                    list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.6, 0.01],
+                    list(robot.paleta1_work_joint[i, j]) + [1.2, 0.6, 0]
+                ]
+                robot.rtde_c.moveJ(path)
+                robot.gripper_open() 
+                time.sleep(0.2)
+
+                path = [
+                    list(robot.paleta1_work_joint[i, j]) + [1.2, 0.6, 0.01],
+                    list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.6, 0.01],
+                    list(random_safe[i, j]) + [1.2, 0.6, 0.01],
+                    list(random_work[i, j]) + [1.2, 0.6, 0.0]
+                ]
+                robot.rtde_c.moveJ(path)
+                robot.gripper_close()
+                time.sleep(0.2)
+                path = [
+                    list(random_work[i,j]) + [1.2, 0.6, 0.01],
+                    list(random_safe[i, j]) + [1.2, 0.6, 0.0]                
+                ]
+                robot.rtde_c.moveJ(path)
 
 
+        robot.homing()
 
     if event == "Zajem slike":
         cam.capture_image()
@@ -140,46 +159,60 @@ while True:
 
     if event == "Pobiranje koščkov s kamero":
         robot.homing()
-        print("Homing")
-        robot.gripper.activate()
-        robot.gripper.move_and_wait_for_pos(229, speed=180, force=2)
+        print("Homing") 
+        robot.gripper.move_and_wait_for_pos(229, speed=200, force=2)
         print("Gripper closed")
+
         #kreiram array za pozicije slike v paleti --> array z [0,0]...[3,5]
-        flat_map = [[i, j] for i in range(robot.paleta1.shape[0]) for j in range(robot.paleta1.shape[1])]
+        flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
         #zanka za zajem slike in vse ostalo :D
-        for i in range(robot.paleta1.shape[0]):
-            for j in range(robot.paleta1.shape[1]):
-                paleta1_p = robot.paleta1[i,j].copy()
-                paleta2_p = robot.paleta2[i,j].copy()
+        for i in range(robot.paleta2_kam_joint.shape[0]):
+            for j in range(robot.paleta2_kam_joint.shape[1]):
+                # 1) Gre nad kos za kamero
+                path = [
+                    list(robot.paleta2_kam_joint[i, j]) + [1.2, 0.5, 0.0]
+                ]
+                robot.rtde_c.moveJ(path)
 
-                # Gre na safe pozicijo nad koscek z koordinato kamere --> offset v x,y,z
-                robot.move_to_kamera_position(paleta2_p)
-
-                # Zajame sliko
+                # 2) Zajame sliko in template matcha
                 cam.capture_image()
-
-                # Obdela sliko in vrne pozicijo v matriki + rotacijo --> iz mreze paleta 1 vzame pravilno lokacijo
                 slika, score_match = cam.template_match(cam.template_path, show=False)
                 slika = slika.split(".")[0]
                 idx, kot = slika.split("_")
                 idx = int(idx)
-                print(idx)
                 kot = int(kot)
-                print(kot)
+                print(idx, kot)
 
                 #gre samo nad tocko kamor bi postavil sliko
                 if flat_map[idx] is not None:
-                    #ce ni None gre nad rezo slikice drgac pa skipa naprej
-                    robot.move_to_position(robot.paleta2[i, j])
+                    # 3) Pick iz palete 2
+                    path = [
+                        list(robot.paleta2_safe_joint[i, j]) + [1.2, 0.6, 0.0]
+                    ]
+                    robot.rtde_c.moveJ(path)
+                    robot.gripper_open()
+                    time.sleep(0.3)
 
-                    #tuki pa potem gre na pozicijo kam bi jo postavu
+                    # 4) Dvig + pot do cilja v paleti 1
                     row, col = flat_map[idx]
-                    robot.move_to_position(robot.paleta1[row, col])
-                    #place-a sliko
-                    robot.pick_and_place_position(robot.paleta1[row,col])
-                    #se vrne nad sliko
-                    robot.move_to_position(robot.paleta1[row,col])
-                    
+                    path = [
+                        list(robot.paleta2_safe_joint[i, j]) + [1.2, 0.6, 0.01],
+                        list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.01],
+                        list(robot.paleta1_work_joint[row, col]) + [1.2, 0.6, 0.0]
+                    ]
+
+                    # 5) Place
+                    robot.rtde_c.moveJ(path)
+                    robot.gripper_close()
+                    time.sleep(0.3)
+
+                     # 6) Dvig nad odlagališče
+                    path = [
+                        list(robot.paleta1_work_joint[row, col]) + [1.2, 0.6, 0.01],
+                        list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.0]
+                    ]
+                    robot.rtde_c.moveJ(path)
+                        
                     #ko polozi sliko, se v matriki pozicij namesto indeksov appenda None
                     flat_map[idx] = None
                 else:
@@ -189,15 +222,30 @@ while True:
         #homing nazaj
         robot.homing()
 
+    
+
     if event == "Generacija random mreže":
         robot.generiranje_nakljucne_mreze(robot.paleta2.shape[0], robot.paleta2.shape[1], robot.paleta2)
         print(robot.generiranje_nakljucne_mreze(robot.paleta2.shape[0], robot.paleta2.shape[1], robot.paleta2))
 
     if event == "Izhodiščna točka palete 1":
-        robot.move_to_position(robot.paleta1[0,0])
-        print(robot.paleta1[0,0])
-        print(robot.rtde_r.getActualQ())
-        print(robot.rtde_c.getInverseKinematics(robot.paleta1[0,0]))
+        robot.gripper_close()
+        path = []
+
+        # če nisi prepričan, da je robot v homingu, dodaj homing kot prvo točko
+        path.append(np.array(robot.home_p).tolist())
+
+        # nato prva pozicija palete1
+        path.append(robot.paleta1_safe_joint[0,0].tolist())
+        path.append(robot.paleta1_work_joint[0,0].tolist())
+        path.append(robot.paleta1_safe_joint[0,0].tolist())
+        path.append(np.array(robot.home_p).tolist())
+
+        # zapakiraj s parametri (acc, vel, blend)
+        full_path = [q + [1.2, 0.2, 0.012] for q in path]
+
+        # pošlji na robot
+        robot.rtde_c.moveJ(full_path)
 
     if event == "Izhodiščna točka palete 2":
-        robot.move_to_position(robot.paleta2[0,0])
+        robot.move_to_position(robot.paleta2_safe_joint[0,0])
