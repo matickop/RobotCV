@@ -175,7 +175,9 @@ while True:
                 robot.rtde_c.moveJ(path)
 
                 # 2) Zajame sliko in template matcha
+                robot.ring_ON()
                 cam.capture_image()
+                robot.ring_OFF()
                 slika, score_match = cam.template_match(cam.template_path, show=False)
                 slika = slika.split(".")[0]
                 idx, kot = slika.split("_")
@@ -185,13 +187,18 @@ while True:
 
                 #gre samo nad tocko kamor bi postavil sliko
                 if flat_map[idx] is not None:
-                    # 3) Pick iz palete 2
+                    # 3) Pick iz palete 2 - rotiranje 
+                    target_safe = robot.paleta2_safe_joint[i, j].copy()
+                    target_safe[5] += np.deg2rad(kot)
+                    target_work = robot.paleta2_work_joint[i, j].copy()
+                    target_work[5] += np.deg2rad(kot)
                     path = [
-                        list(robot.paleta2_safe_joint[i, j]) + [1.2, 0.6, 0.0]
+                        list(target_safe) + [1.2, 0.6, 0.0]
                     ]
                     robot.rtde_c.moveJ(path)
                     robot.gripper_open()
                     time.sleep(0.3)
+
 
                     # 4) Dvig + pot do cilja v paleti 1
                     row, col = flat_map[idx]
@@ -229,23 +236,7 @@ while True:
         print(robot.generiranje_nakljucne_mreze(robot.paleta2.shape[0], robot.paleta2.shape[1], robot.paleta2))
 
     if event == "Izhodiščna točka palete 1":
-        robot.gripper_close()
-        path = []
-
-        # če nisi prepričan, da je robot v homingu, dodaj homing kot prvo točko
-        path.append(np.array(robot.home_p).tolist())
-
-        # nato prva pozicija palete1
-        path.append(robot.paleta1_safe_joint[0,0].tolist())
-        path.append(robot.paleta1_work_joint[0,0].tolist())
-        path.append(robot.paleta1_safe_joint[0,0].tolist())
-        path.append(np.array(robot.home_p).tolist())
-
-        # zapakiraj s parametri (acc, vel, blend)
-        full_path = [q + [1.2, 0.2, 0.012] for q in path]
-
-        # pošlji na robot
-        robot.rtde_c.moveJ(full_path)
+        robot.move_to_position(robot.paleta1_safe_joint[0,0])
 
     if event == "Izhodiščna točka palete 2":
         robot.move_to_position(robot.paleta2_safe_joint[0,0])

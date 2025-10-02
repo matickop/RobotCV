@@ -3,6 +3,7 @@ import math
 import numpy as np
 import rtde_control
 import rtde_receive
+import rtde_io
 import random
 import robotiq_gripper
 from scipy.spatial.transform import Rotation as R
@@ -14,6 +15,7 @@ class MyRobot:
         #RTDE connection
         self.rtde_c = rtde_control.RTDEControlInterface(host)
         self.rtde_r = rtde_receive.RTDEReceiveInterface(host)
+        self.rtde_io = rtde_io.RTDEIOInterface(host)
         # gripper connection
         self.gripper = robotiq_gripper.RobotiqGripper()
         self.gripper.connect(host, 63352)
@@ -73,7 +75,6 @@ class MyRobot:
 
             print("robot successfully reconnected and payload set.")
             return True
-
         except Exception as e:
             print(f"Reconnect failed {e}")
             return False
@@ -419,7 +420,13 @@ class MyRobot:
         for q in positions:
             q = q.tolist() if hasattr(q, "tolist") else list(q)
             path.append(q + [acc, vel, blend])
-        self.rtde_c.moveJ(path)        
+        self.rtde_c.moveJ(path)  
+
+    def ring_ON(self):
+        self.rtde_io.setStandardDigitalOut(0, True)
+
+    def ring_OFF(self):
+        self.rtde_io.setStandardDigitalOut(0, False)
 
     def disconnect(self):
         self.rtde_c.disconnect()
