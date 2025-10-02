@@ -179,5 +179,4 @@ def zajem_celotne_slike():
             cv2.imwrite(rotated_path, rotated)
             print(f"Shranjena rotacija {kot}°: {rotated_path}")
 
-
             
