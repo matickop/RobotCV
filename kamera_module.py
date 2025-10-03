@@ -28,7 +28,7 @@ class MyCamera:
         self.cam.Open()
 
         self.template_path = None
-        self.search_dir = "sestavljanka_template_matching"
+        self.search_dir = "zajeta_celotna_slika"
 
         self.image_cache = {}
         self.preload_images()
@@ -68,7 +68,7 @@ class MyCamera:
     # ----------------------------------------------------------------------
 
     def template_match(self, template_path: str,
-                       method=cv2.TM_CCOEFF_NORMED, show: bool = True):
+                       method=cv2.TM_SQDIFF_NORMED, show: bool = True):
         """
         Poišče najboljše ujemanje med template_path in vsemi slikami v search_dir.
         Vrne (najboljsa_datoteka, najboljsi_score).
@@ -79,7 +79,7 @@ class MyCamera:
         template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
         h, w = template_gray.shape[:2]
 
-        najboljsi_score = -1
+        najboljsi_score = 1
         najboljsa_sestavljanka = None
         najboljsa_datoteka = None
         najboljsa_lokacija = None
@@ -88,13 +88,13 @@ class MyCamera:
             if img is None:
                 continue
             res = cv2.matchTemplate(img, template_gray, method)
-            _, max_val, _, max_loc = cv2.minMaxLoc(res)
+            min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
 
-            if max_val > najboljsi_score:
-                najboljsi_score = max_val
+            if min_val <  najboljsi_score:
+                najboljsi_score = min_val
                 najboljsa_sestavljanka = img.copy()
                 najboljsa_datoteka = name
-                najboljsa_lokacija = max_loc
+                najboljsa_lokacija = min_loc
 
         if najboljsa_sestavljanka is None:
             print("Ni bilo najdenega ujemanja.")
@@ -124,3 +124,28 @@ class MyCamera:
     def connect(self):
         """Odpre kamero"""
         self.cam.Open()
+
+    def capture_image_celotna(self, filename: str = "zajeta_slika.png", save_dir: str = None, timeout_ms: int = 20000) -> str:
+        """
+        Zajame eno sliko in jo shrani v self.save_dir
+        Vrne pot do shranjene slike.
+        """
+        if save_dir is None:
+            save_dir = "zajeta_celotna_slika"
+            os.makedirs(save_dir, exist_ok=True)
+
+        result = self.cam.GrabOne(timeout_ms)
+        if result.GrabSucceeded():
+            img = pylon.PylonImage()
+            img.AttachGrabResultBuffer(result)
+            save_path = os.path.join(save_dir, filename)
+            img.Save(pylon.ImageFileFormat_Png, save_path)
+            img.Release()
+            result.Release()
+            self.template_path = save_path
+
+            return save_path
+        else:
+            raise RuntimeError(
+                f"Grab failed: {result.ErrorCode} {result.ErrorDescription}"
+            )
