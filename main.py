@@ -38,9 +38,9 @@ def shuffling_kosckov():
 
             path = [
                 list(robot.paleta1_work_joint[i, j]) + [1.2, 0.6, 0.01],
-                list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.6, 0.01],
+                list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.2, 0.01],
                 list(random_safe[i, j]) + [1.2, 0.6, 0.01],
-                list(random_work[i, j]) + [1.2, 0.6, 0.0]
+                list(random_work[i, j]) + [1.2, 0.2, 0.0]
             ]
             robot.rtde_c.moveJ(path)
             robot.gripper_close()
@@ -71,6 +71,7 @@ def pobiranje_s_kamero():
                 return
             # 1) Gre nad kos za kamero
             path = [
+                list(robot.paleta2_kam_safe_joint[i, j]) + [1.2, 0.5, 0.0],
                 list(robot.paleta2_kam_joint[i, j]) + [1.2, 0.5, 0.0]
             ]
             robot.rtde_c.moveJ(path)
@@ -94,8 +95,9 @@ def pobiranje_s_kamero():
                 target_work = robot.paleta2_work_joint[i, j].copy()
                 target_work[5] += np.deg2rad(kot)
                 path = [
+                    list(robot.paleta2_kam_safe_joint[i, j]) + [1.2, 0.6, 0.0],
                     list(target_safe) + [1.2, 0.6, 0.0],
-                    list(target_work) + [0.2, 0.1, 0.0],
+                    list(target_work) + [0.2, 0.2, 0.0],
                 ]
                 robot.rtde_c.moveJ(path)
                 print("premikam se nad sliko")
@@ -109,7 +111,7 @@ def pobiranje_s_kamero():
                 path = [
                     list(target_safe) + [1.2, 0.6, 0.01],
                     list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.01],
-                    list(robot.paleta1_work_joint[row, col]) + [1.2, 0.6, 0.0]
+                    list(robot.paleta1_work_joint[row, col]) + [1.2, 0.2, 0.0]
                 ]
 
                 # 5) Place
@@ -166,7 +168,7 @@ def zajem_celotne_slike():
                 return
             # 1) Gre nad kos za kamero
             path = [
-                list(robot.paleta2_safe_joint[i, j]) + [1.2, 0.5, 0.0],
+                list(robot.paleta2_kam_safe_joint[i, j]) + [1.2, 0.5, 0.0],
                 list(robot.paleta2_kam_joint[i, j]) + [1.2, 0.5, 0.0]
             ]
             robot.rtde_c.moveJ(path)
@@ -180,7 +182,7 @@ def zajem_celotne_slike():
             robot.ring_OFF()
             path = [
                 list(robot.paleta2_kam_joint[i, j]) + [1.2, 0.5, 0.0],
-                list(robot.paleta2_safe_joint[i, j]) + [1.2, 0.5, 0.0]
+                list(robot.paleta2_kam_safe_joint[i, j]) + [1.2, 0.5, 0.0]
             ]
             robot.rtde_c.moveJ(path)
 

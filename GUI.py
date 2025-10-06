@@ -46,6 +46,7 @@ while True:
 
     if event == "Activate gripper":
         main.robot.gripper.activate()
+        main.robot.gripper_close()
 
     if event == "Reconnect":
         main.robot.reconnect()

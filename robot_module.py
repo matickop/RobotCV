@@ -35,7 +35,7 @@ class MyRobot:
 
         self.kamera_y = 0.1
         self.safe_z = 0.04
-        self.work_z = 0.0122
+        self.work_z = 0.0112
         self.kamera_z = 0.0245
         self.freedrive_active = False
         self.home_p = [ math.radians(-90),
@@ -54,7 +54,8 @@ class MyRobot:
         self.homing()
         time.sleep(0.5)
         self.gripper.activate()
-        time.sleep(3)
+        self.gripper_close()
+        print(self.paleta2_kam_safe, self.paleta2_kam_safe_joint)
     def reconnect(self, host="192.168.3.102"):
         try:
             try:
@@ -81,7 +82,7 @@ class MyRobot:
    
     def _load_paleta(self, ime):
         """Naloži vse mreže za paleto (1 ali 2) in nastavi atribute self.paletaX_safe, ..."""
-        suffixes = ["safe", "work", "kam"]
+        suffixes = ["safe", "work", "kam", "kam_safe"]
         for suf in suffixes:
             try:
                 pose = np.load(f"mreza_paleta{ime}_{suf}.npy")
@@ -161,6 +162,7 @@ class MyRobot:
         mreza_safe  = np.zeros((a, b, 6))
         mreza_work  = np.zeros((a, b, 6))
         mreza_kam   = np.zeros((a, b, 6))
+        mreza_kam_safe = np.zeros((a, b, 6))
 
         for i in range(a):
             v_left = zl - (zl - sl)*(i/(a-1))
@@ -185,26 +187,35 @@ class MyRobot:
                 pos_kam[2] = self.kamera_z
                 mreza_kam[i, j] = pos_kam
 
+                #kamera safe
+                pos_kam_safe= poz[i,j].copy()
+                pos_kam_safe[1] += self.kamera_y
+                pos_kam_safe[2] = self.safe_z
+                mreza_kam_safe[i, j] = pos_kam_safe 
 
 
-        return mreza_safe, mreza_work, mreza_kam
+
+        return mreza_safe, mreza_work, mreza_kam, mreza_kam_safe
     
     def pripravi_in_shrani_paleto(self, ime, koti, oznaka, a=4, b=6):
         # generiranje mrež (pose)
-        safe, work, kam = self.generiranje_mreze(a, b, koti, oznaka)
+        safe, work, kam, kam_safe = self.generiranje_mreze(a, b, koti, oznaka)
         # pretvorba v joint
         safe_joint  = self.pretvori_v_joint_mreze(safe)
         work_joint  = self.pretvori_v_joint_mreze(work)
         kam_joint   = self.pretvori_v_joint_mreze(kam)
+        kam_safe_joint = self.pretvori_v_joint_mreze(kam_safe)
 
         # shrani
         np.save(f"mreza_{ime}_safe.npy", safe)
         np.save(f"mreza_{ime}_work.npy", work)
-        np.save(f"mreza_{ime}_kam.npy", safe)
+        np.save(f"mreza_{ime}_kam.npy", kam)
+        np.save(f"mreza_{ime}_kam_safe.npy", kam_safe)
 
         np.save(f"mreza_{ime}_safe_joint.npy", safe_joint)
         np.save(f"mreza_{ime}_work_joint.npy", work_joint)
         np.save(f"mreza_{ime}_kam_joint.npy", kam_joint)
+        np.save(f"mreza_{ime}_kam_safe_joint.npy", kam_safe_joint)
 
         return safe, work, kam, safe_joint, work_joint, kam_joint
 
@@ -306,10 +317,10 @@ class MyRobot:
         self.rtde_c.moveJ(q_position, self.accq, self.velq)
 
     def gripper_open(self):
-        self.gripper.move_and_wait_for_pos(211, speed=200, force=2)
+        self.gripper.move_and_wait_for_pos(210, speed=200, force=10)
 
     def gripper_close(self):
-        self.gripper.move_and_wait_for_pos(229, speed=200, force=5)
+        self.gripper.move_and_wait_for_pos(229, speed=200, force=10)
 
     def move_with_blend(self, positions, acc=1.2, vel=0.5, blend=0.01):
         """
