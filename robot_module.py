@@ -33,10 +33,10 @@ class MyRobot:
         else:
             self.pobrani_koti = [None] * 8
 
-        self.kamera_y = 0.098348
+        self.kamera_y = 0.1
         self.safe_z = 0.04
-        self.work_z = 0.0098
-        self.kamera_z = 0.01935
+        self.work_z = 0.0122
+        self.kamera_z = 0.0245
         self.freedrive_active = False
         self.home_p = [ math.radians(-90),
                         math.radians(-90),
@@ -227,7 +227,7 @@ class MyRobot:
 
         return mreza_joint 
 
-    def pick_wrist6_candidate(self, q6_target, q6_current, limit_deg=250, alpha=0.002):
+    def pick_wrist6_candidate(self, q6_target, q6_current, limit_deg=180, alpha=0.002):
         # Evaluate q6_target + k*2π for k in {-1, 0, +1}
         candidates = [q6_target + k*2*np.pi for k in (-1, 0, 1)]
         def cost(q6):
@@ -237,7 +237,7 @@ class MyRobot:
             proximity = max(0.0, abs(q6_deg) - (limit_deg - 20))  # start penalizing near the edge
             return dist + alpha * proximity
         # choose the candidate with minimum cost, but discard those beyond hard limit
-        hard_limit_deg = 270
+        hard_limit_deg = 250
         feasible = [c for c in candidates if abs(np.degrees(c)) <= hard_limit_deg]
         if not feasible:
             feasible = candidates
@@ -279,106 +279,6 @@ class MyRobot:
         random_work = flat_work.reshape(a, b, 6)
 
         return random_safe, random_work
-    
-    def shuffling_kosckov(self, safe_z=0.04, work_z=0.0098):
-        """"Robot pobere kosckek na paleti 1 in ga postavni na naključno mesto na paleti2"""
-        random_paleta2 = self.generiranje_nakljucne_mreze(self.paleta2.shape[0],    
-                                                           self.paleta2.shape[1],   
-                                                           self.paleta2)
-
-        self.homing()
-        print("homing")
-        self.gripper.activate()
-        print("gripper activated")
-        self.gripper.move_and_wait_for_pos(229, speed=180, force=2)
-
-        for i in range(self.paleta1.shape[0]):
-            for j in range(self.paleta1.shape[1]):
-                pick_p = self.paleta1[i, j].copy()
-                place_p = random_paleta2[i, j].copy()
-
-                safe_p = pick_p.copy()
-                safe_p[2] = safe_z
-
-                safe_place = place_p.copy()
-                safe_place[2] = safe_z
-
-                work_pick = pick_p.copy()
-                work_pick[2] = work_z
-
-                work_place = place_p.copy()
-                work_place[2] = work_z
-
-                # 1. gre nad koscek
-                self.rtde_c.moveL(safe_p, self.acc, self.vel)
-                print(safe_p)
-
-                # 2. gre v utor s prijemalom
-                self.rtde_c.moveL(work_pick, self.acc, self.vel)
-                print(work_pick)
-                
-                # 3. open gripper
-                self.gripper.move_and_wait_for_pos(211, speed=150, force=2)
-
-                #4. dvigne kosck
-                self.rtde_c.moveL(safe_p, self.acc, self.vel)
-
-                #5. pozicija na paleti2, gre nad njo
-                self.rtde_c.moveL(safe_place, self.acc, self.vel)
-
-                #6. gre dol do prave visine
-                self.rtde_c.moveL(work_place, self.acc, self.vel)
-
-                #7. zapre gripper
-                self.gripper.move_and_wait_for_pos(229, speed=150, force=2)
-
-                #8. gre nad kosck
-                self.rtde_c.moveL(safe_place, self.acc, self.vel)
-
-                #tle in gre jovo na novo
-        
-
-        # nazaj na home
-        self.homing()
-        self.rtde_c.disconnect()
-        self.gripper.disconnect()
-
-    def pobiranje_kamera(self, safe_z=0.04, work_z=0.0098, kamera_z=0.01935):
-        """Robot gre nad paleto2, nad vsak koscke, zajame sliko, jo pregleda in koscek postavi na pravilno mesto"""
-
-        self.homing()
-        print("Homing")
-        self.gripper.move_and_wait_for_pos(229, speed=180, force=2)
-        print("Gripper closed")
-        #zanka za zajem slike in vse ostalo :D
-        for i in range(self.paleta1.shape[0]):
-            for j in range(self.paleta1.shape[1]):
-                paleta1_p = self.paleta1[i,j].copy()
-                paleta2_p = self.paleta2[i,j].copy()
-                #parametri pozicij - safe, work, kamera --> različne višine
-                kamera_p = paleta2_p.copy()
-                kamera_p[2] = kamera_z
-                kamera_p[1] = kamera_p[0] + self.kamera_y
-
-                pick_p = paleta2_p.copy()
-                pick_safe_p = pick_p.copy()
-                pick_safe_p[2] = safe_z
-                pick_work_p = pick_p.copy()
-                pick_work_p[2] = work_z
-
-                place_p = paleta1_p.copy()
-                place_safe_p = place_p.copy()
-                place_safe_p[2] = safe_z
-                place_work_p = place_p.copy()
-                place_work_p[2] = work_z
-
-                # Gre na safe pozicijo nad koscek z koordinato kamere --> offset v x,y,z
-                self.rtde_c.moveL(kamera_p, self.acc, self.vel)
-                # Zajame sliko
-
-                # Obdela sliko in vrne pozicijo v matriki + rotacijo --> iz mreze paleta 1 vzame pravilno lokacijo
-
-                # Iz place
 
     def move_with_random_rotation(self, position):
         position[2] = self.safe_z
@@ -430,4 +330,6 @@ class MyRobot:
 
     def disconnect(self):
         self.rtde_c.disconnect()
+        self.rtde_r.disconnect()
+        self.rtde_io.disconnect()
         self.gripper.disconnect()

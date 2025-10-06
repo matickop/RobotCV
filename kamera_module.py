@@ -149,3 +149,5 @@ class MyCamera:
             raise RuntimeError(
                 f"Grab failed: {result.ErrorCode} {result.ErrorDescription}"
             )
+        
+    

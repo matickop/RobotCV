@@ -12,7 +12,7 @@ layout = [
     [sg.Text("RobotCV GUI", font=("Helvetica", 24), expand_x=True, justification='center')],
     [sg.Text("Robot control:")],
     [sg.Button("Reconnect", s=14), sg.B("Activate gripper"), sg.B("STOP",button_color=("white", "red"), s=14)],
-    [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14), sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike")],
+    [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14), sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
     [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2")],
     [sg.Text("Camera control:")],
     [sg.Button("Zajem slike", s=14), sg.B("Template matching", s=14), sg.B("Disconnect camera", s=14), sg.B("Connect camera", s=14)],
@@ -23,7 +23,7 @@ layout = [
     [sg.Multiline("", size=(70,10), key="-KOTI-", disabled=True)],
     [sg.Button("Generiraj mrežo palete 1", s=18), sg.Button("Naloži paleto 1", s=14)],
     [sg.Button("Generiraj mrežo palete 2", s=18), sg.Button("Naloži paleto 2", s=14)],
-    [sg.B("Generacija random mreže")]
+    [sg.B("Exit", button_color=("white", "red"), s=14)]
 ]
 
 window = sg.Window("RobotCV GUI", layout, resizable=True, finalize=True)
@@ -31,8 +31,14 @@ window = sg.Window("RobotCV GUI", layout, resizable=True, finalize=True)
 while True:
     event, values = window.read()
 
-    if event == sg.WIN_CLOSED:
-        main.robot.disconnect()
+    if event in (sg.WIN_CLOSED, "Exit"):
+        print("Zapiram program")
+        try:
+            main.robot.disconnect()
+            main.cam.release()
+            print("Uspešen izklop robota, gripperja kamere")
+        except Exception as e:
+            print("Napaka pri disconnectanju:", e)
         break
     
     if event ==  "Home":
@@ -106,6 +112,9 @@ while True:
 
     if event == "Zajem slike":
         main.cam.capture_image()
+
+    if event == "Celoten loop":
+        threading.Thread(target=main.celoten_loop  , daemon=True).start()
 
     if event == "Disconnect camera":
         main.cam.release()
