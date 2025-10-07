@@ -36,6 +36,7 @@ class MyRobot:
         self.kamera_y = 0.1
         self.safe_z = 0.04
         self.work_z = 0.0112
+        self.drop_z = 0.0152
         self.kamera_z = 0.0245
         self.freedrive_active = False
         self.home_p = [ math.radians(-90),
@@ -82,7 +83,7 @@ class MyRobot:
    
     def _load_paleta(self, ime):
         """Naloži vse mreže za paleto (1 ali 2) in nastavi atribute self.paletaX_safe, ..."""
-        suffixes = ["safe", "work", "kam", "kam_safe"]
+        suffixes = ["safe", "work", "kam", "kam_safe", "drop"]
         for suf in suffixes:
             try:
                 pose = np.load(f"mreza_paleta{ime}_{suf}.npy")
@@ -163,6 +164,7 @@ class MyRobot:
         mreza_work  = np.zeros((a, b, 6))
         mreza_kam   = np.zeros((a, b, 6))
         mreza_kam_safe = np.zeros((a, b, 6))
+        mreza_drop = np.zeros((a, b, 6))
 
         for i in range(a):
             v_left = zl - (zl - sl)*(i/(a-1))
@@ -181,6 +183,11 @@ class MyRobot:
                 pos_work[2] = self.work_z
                 mreza_work[i, j] = pos_work
 
+                #drop
+                pos_drop = poz[i,j].copy()
+                pos_drop[2] = self.drop_z
+                mreza_drop[i, j] = pos_drop
+
                 #kamera
                 pos_kam = poz[i,j].copy()
                 pos_kam[1] += self.kamera_y
@@ -195,29 +202,32 @@ class MyRobot:
 
 
 
-        return mreza_safe, mreza_work, mreza_kam, mreza_kam_safe
+        return mreza_safe, mreza_work, mreza_kam, mreza_kam_safe, mreza_drop
     
     def pripravi_in_shrani_paleto(self, ime, koti, oznaka, a=4, b=6):
         # generiranje mrež (pose)
-        safe, work, kam, kam_safe = self.generiranje_mreze(a, b, koti, oznaka)
+        safe, work, kam, kam_safe, drop = self.generiranje_mreze(a, b, koti, oznaka)
         # pretvorba v joint
         safe_joint  = self.pretvori_v_joint_mreze(safe)
         work_joint  = self.pretvori_v_joint_mreze(work)
         kam_joint   = self.pretvori_v_joint_mreze(kam)
         kam_safe_joint = self.pretvori_v_joint_mreze(kam_safe)
+        drop_joint = self.pretvori_v_joint_mreze(drop)
 
         # shrani
         np.save(f"mreza_{ime}_safe.npy", safe)
         np.save(f"mreza_{ime}_work.npy", work)
         np.save(f"mreza_{ime}_kam.npy", kam)
         np.save(f"mreza_{ime}_kam_safe.npy", kam_safe)
+        np.save(f"mreza_{ime}_drop.npy", drop)
 
         np.save(f"mreza_{ime}_safe_joint.npy", safe_joint)
         np.save(f"mreza_{ime}_work_joint.npy", work_joint)
         np.save(f"mreza_{ime}_kam_joint.npy", kam_joint)
         np.save(f"mreza_{ime}_kam_safe_joint.npy", kam_safe_joint)
+        np.save(f"mreza_{ime}_drop_joint.npy", drop_joint)
 
-        return safe, work, kam, safe_joint, work_joint, kam_joint
+        return safe, work, kam, kam_safe, drop, safe_joint, work_joint, kam_joint, kam_safe_joint, drop_joint
 
 
     def pretvori_v_joint_mreze(self, mreza_pose):
@@ -291,6 +301,9 @@ class MyRobot:
 
         return random_safe, random_work
 
+    def move_fine(self, position):
+        self.rtde_c.moveL(position, speed = 0.2, acceleration=0.3)
+
     def move_with_random_rotation(self, position):
         position[2] = self.safe_z
         q_position = self.rtde_c.getInverseKinematics(position)
@@ -317,10 +330,10 @@ class MyRobot:
         self.rtde_c.moveJ(q_position, self.accq, self.velq)
 
     def gripper_open(self):
-        self.gripper.move_and_wait_for_pos(210, speed=200, force=10)
+        self.gripper.move_and_wait_for_pos(209, speed=255, force=120)
 
     def gripper_close(self):
-        self.gripper.move_and_wait_for_pos(229, speed=200, force=10)
+        self.gripper.move_and_wait_for_pos(229, speed=255, force=120)
 
     def move_with_blend(self, positions, acc=1.2, vel=0.5, blend=0.01):
         """
@@ -338,6 +351,14 @@ class MyRobot:
 
     def ring_OFF(self):
         self.rtde_io.setStandardDigitalOut(0, False)
+
+    def teachMode(self):
+        self.rtde_c.teachMode()
+        self.freedrive_active = True
+        
+    def endTeachMode(self):
+        self.rtde_c.endTeachMode()
+        self.freedrive_active = False
 
     def disconnect(self):
         self.rtde_c.disconnect()

@@ -13,7 +13,7 @@ layout = [
     [sg.Text("Robot control:")],
     [sg.Button("Reconnect", s=14), sg.B("Activate gripper"), sg.B("STOP",button_color=("white", "red"), s=14)],
     [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14), sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
-    [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2")],
+    [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2"), sg.B("X+"), sg.B("X-"), sg.B("Y+"), sg.B("Y-"), sg.B("Z+"), sg.B("Z-"), sg.B("Kamera paleta 2")],
     [sg.Text("Camera control:")],
     [sg.Button("Zajem slike", s=14), sg.B("Template matching", s=14), sg.B("Disconnect camera", s=14), sg.B("Connect camera", s=14)],
     [sg.Text("Prva paleta:")],
@@ -56,10 +56,10 @@ while True:
 
     if event == "FreeDrive":
         if not main.robot.freedrive_active:
-            main.robot.activate_freedrive()
+            main.robot.teachMode()
             window[event].update(text="FreeDrive ON", button_color=('white','red'))
         else:
-            main.robot.deactivate_freedrive()
+            main.robot.endTeachMode()
             window[event].update(text="FreeDrive", button_color=('white','green'))
 
     elif event.startswith("Kot"):
@@ -82,9 +82,13 @@ while True:
         (main.robot.paleta1_safe,
         main.robot.paleta1_work,
         main.robot.paleta1_kam,
+        main.robot.paleta1_kam_safe,
+        main.robot.paleta1_drop,
         main.robot.paleta1_safe_joint,
         main.robot.paleta1_work_joint,
-        main.robot.paleta1_kam_joint) = main.robot.pripravi_in_shrani_paleto("paleta1", main.robot.pobrani_koti[:4], "1")
+        main.robot.paleta1_kam_joint,
+        main.robot.paleta1_kam_safe_joint,
+        main.robot.paleta1_drop_joint) = main.robot.pripravi_in_shrani_paleto("paleta1", main.robot.pobrani_koti[:4], "1")
         sg.popup("Mreža palete 1 generirana!")
 
     elif event == "Generiraj mrežo palete 2":
@@ -95,9 +99,13 @@ while True:
         (main.robot.paleta2_safe,
         main.robot.paleta2_work,
         main.robot.paleta2_kam,
+        main.robot.paleta2_kam_safe,
+        main.robot.paleta2_drop,
         main.robot.paleta2_safe_joint,
         main.robot.paleta2_work_joint,
-        main.robot.paleta2_kam_joint) = main.robot.pripravi_in_shrani_paleto("paleta2", main.robot.pobrani_koti[4:], "2")
+        main.robot.paleta2_kam_joint,
+        main.robot.paleta2_kam_safe_joint,
+        main.robot.paleta2_drop_joint) = main.robot.pripravi_in_shrani_paleto("paleta2", main.robot.pobrani_koti[4:], "2")
         sg.popup("Mreža palete 2 generirana!")
 
     elif event == "Naloži palete 1":
@@ -142,5 +150,27 @@ while True:
     if event == "Izhodiščna točka palete 2":
         main.robot.move_to_position(main.robot.paleta2_safe_joint[0,0])
 
+    if event == "Kamera paleta 2":
+        main.robot.move_to_position(main.robot.paleta2_kam_safe_joint[0,0])
+        main.robot.move_to_position(main.robot.paleta2_kam_joint[0,0])
+
     if event == "Zajem celotne slike":
-        main.zajem_celotne_slike()
+        threading.Thread(target=main.zajem_celotne_slike, daemon=True).start()
+
+    if event == "X+":
+        main.fine_move_tcp(dx=0.0001)
+
+    if event == "X-":
+        main.fine_move_tcp(dx=-0.0001)
+
+    if event == "Y+":
+        main.fine_move_tcp(dy=0.0001)
+
+    if event == "Y-":
+        main.fine_move_tcp(dy=-0.0001)
+
+    if event == "Z+":
+        main.fine_move_tcp(dz=0.0001)
+
+    if event == "Z-":
+        main.fine_move_tcp(dz=-0.0001)

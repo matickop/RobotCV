@@ -1,7 +1,6 @@
 import time
 import numpy as np
 from scipy.spatial.transform import Rotation as R
-import FreeSimpleGUI as sg
 from robot_module import MyRobot
 from kamera_module import MyCamera
 import cv2
@@ -17,7 +16,7 @@ pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
 
 def shuffling_kosckov():
     stop_event.clear()
-    random_safe, random_work = robot.generiraj_random_joint_mreze(robot.paleta2_safe_joint, robot.paleta2_work_joint)
+    random_safe, random_drop = robot.generiraj_random_joint_mreze(robot.paleta2_safe_joint, robot.paleta2_drop_joint)
     robot.homing()
     print("homing")
     robot.gripper_close()
@@ -40,13 +39,13 @@ def shuffling_kosckov():
                 list(robot.paleta1_work_joint[i, j]) + [1.2, 0.6, 0.01],
                 list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.2, 0.01],
                 list(random_safe[i, j]) + [1.2, 0.6, 0.01],
-                list(random_work[i, j]) + [1.2, 0.2, 0.0]
+                list(random_drop[i, j]) + [1.2, 0.2, 0.0]
             ]
             robot.rtde_c.moveJ(path)
             robot.gripper_close()
             time.sleep(0.2)
             path = [
-                list(random_work[i,j]) + [1.2, 0.6, 0.01],
+                list(random_drop[i,j]) + [1.2, 0.6, 0.01],
                 list(random_safe[i, j]) + [1.2, 0.6, 0.0]                
             ]
             robot.rtde_c.moveJ(path)
@@ -111,7 +110,7 @@ def pobiranje_s_kamero():
                 path = [
                     list(target_safe) + [1.2, 0.6, 0.01],
                     list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.01],
-                    list(robot.paleta1_work_joint[row, col]) + [1.2, 0.2, 0.0]
+                    list(robot.paleta1_drop_joint[row, col]) + [1.2, 0.2, 0.0]
                 ]
 
                 # 5) Place
@@ -121,7 +120,7 @@ def pobiranje_s_kamero():
 
                     # 6) Dvig nad odlagališče
                 path = [
-                    list(robot.paleta1_work_joint[row, col]) + [1.2, 0.6, 0.01],
+                    list(robot.paleta1_drop_joint[row, col]) + [1.2, 0.6, 0.01],
                     list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.0]
                 ]
                 robot.rtde_c.moveJ(path)
@@ -218,5 +217,14 @@ def generiranje_rotacije_slik(folder: str):
             cv2.imwrite(save_path, rotated_img)
             print(f"saved: {save_path}")
 
+def fine_move_tcp(dx=0.0, dy=0.0, dz=0.0):
+    tcp = robot.get_actual_tcp_pose()
+    tcp[0] += dx
+    tcp[1] += dy
+    tcp[2] += dz
+    tcp[3] = 0.0
+    tcp[4] = 3.14
+    tcp[5] = 0.0
+    robot.move_fine(tcp)
     
 
