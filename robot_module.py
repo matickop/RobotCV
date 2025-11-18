@@ -4,47 +4,74 @@ import numpy as np
 import rtde_control
 import rtde_receive
 import rtde_io
+import dashboard_client
 import random
 import robotiq_gripper
 from scipy.spatial.transform import Rotation as R
 import time
+import threading
 
 
 class MyRobot:
     def __init__(self, host):
-        #RTDE connection
-        self.rtde_c = rtde_control.RTDEControlInterface(host)
+        #ROBOT PARAM:
+        self.rob_freq = 500.0
+        #WATCHDOG PARAM
+        self.watchdog_flag = threading.Event()
+        self.watchdog_thread = None
+        #RTDE connectionP
+        self.rtde_c = rtde_control.RTDEControlInterface(host, self.rob_freq)
         self.rtde_r = rtde_receive.RTDEReceiveInterface(host)
         self.rtde_io = rtde_io.RTDEIOInterface(host)
+        self.dash = dashboard_client.DashboardClient(host, 29999)
+        self.dash.connect(2000)
+        ##REUPLOAD SCRIPTS - CLEAR PROTECTIVE STOP
+        #self.rtde_c.reuploadScript()
+        #START WATCHDOG
+        print("[INFO] Povezava z robotom uspešna")
+        self.rtde_c.setWatchdog(10.0) # 10 --> 10Hz --> 0.1s
+        self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
+        self.watchdog_thread.start()
+        print(f"[INFO] Watchdog nastavljen na 10Hz")
         # gripper connection
         self.gripper = robotiq_gripper.RobotiqGripper()
         self.gripper.connect(host, 63352)
-        # parametri
+        # parametri hitrosti
         self.acc = 0.2
         self.accq = 0.4
         self.vel = 0.4
         self.velq = 0.6
-        self._load_paleta(1) #atributi se shranijo v 3 palete glede na z offset, vse so pretvorjene v joint space:    
-                            # paleta1_safe/_joint, paleta1_work/_joint, paleta1_kam/joint 
-        self._load_paleta(2)# isto sam da so paleta2_xsdasdsad
-
-        if os.path.exists("koti.npy"):
-            self.pobrani_koti = np.load("koti.npy", allow_pickle=True).tolist()
-        else:
-            self.pobrani_koti = [None] * 8
-
-        self.kamera_y = 0.1
-        self.safe_z = 0.04
-        self.work_z = 0.0112
-        self.drop_z = 0.0152
-        self.kamera_z = 0.0245
-        self.freedrive_active = False
+        # home position
         self.home_p = [ math.radians(-90),
                         math.radians(-90),
                         math.radians(-90),
                         math.radians(-90),
                         math.radians(90),
                         math.radians(0)]
+        # HOMING
+        self.homing()
+        self.ensure_home(max_attempts=3, tol=0.05)
+        # GRIPPER AKTIVIRAN
+        self.gripper.activate()
+        self.gripper_close()
+        # generacija mrez
+        self._load_paleta(1) #atributi se shranijo v 3 palete glede na z offset, vse so pretvorjene v joint space:    
+                            # paleta1_safe/_joint, paleta1_work/_joint, paleta1_kam/joint 
+        self._load_paleta(2)# isto sam da so paleta2_xsdasdsad
+        print(f"[INFO] Mreže generirane")
+        # loadanje kotov
+        if os.path.exists("koti.npy"):
+            self.pobrani_koti = np.load("koti.npy", allow_pickle=True).tolist()
+        else:
+            self.pobrani_koti = [None] * 8
+
+        # ostali parametri
+        self.kamera_y = 0.1
+        self.safe_z = 0.04
+        self.work_z = 0.0112
+        self.drop_z = 0.0152
+        self.kamera_z = 0.0245
+        self.freedrive_active = False
         self.payload_mass = 1.15
         self.cog = [0, -0.004, 0.045]
         self.inital_tcp_rotation = np.array([0, 3.14, 0])
@@ -52,34 +79,38 @@ class MyRobot:
         self.tcp_rotation_paleta2 = None 
         self.rtde_c.setPayload(self.payload_mass, self.cog)
 
-        self.homing()
-        time.sleep(0.5)
-        self.gripper.activate()
-        self.gripper_close()
-        print(self.paleta2_kam_safe, self.paleta2_kam_safe_joint)
+    def watchdog_kicker(self):
+        varnostni_faktor = 0.01 # 10ms
+        perioda = 0.1
+        ciljni_cas = perioda - varnostni_faktor
+        while not self.watchdog_flag.is_set():
+            start_time = time.monotonic()
+            try:
+                self.rtde_c.kickWatchdog()
+            except rtde_control.RTDEException as e:
+                print(f"[ERROR] Napaka WATCHDOG - prekinjena povezava z robotom: {e}")
+                break
+            elapsed = time.monotonic() - start_time
+            sleep_time = ciljni_cas - elapsed
+            if sleep_time > 0:
+                sleep_time -= varnostni_faktor
+                time.sleep(sleep_time)
+
     def reconnect(self, host="192.168.3.102"):
         try:
-            try:
-                self.rtde_c.disconnect()
-            except:
-                pass
-            try:
-                self.gripper.disconnect()
-            except:
-                pass
-
-            self.rtde_c = rtde_control.RTDEControlInterface(host)
-            self.rtde_r = rtde_receive.RTDEReceiveInterface(host)
-            self.gripper = robotiq_gripper.RobotiqGripper()
-            self.gripper.connect(host, 63352)
-
+            self.rtde_c.reconnect()
+            self.rtde_r.reconnect()
+            self.rtde_io.reconnect()
+            self.dash.connect(2000)
             self.rtde_c.setPayload(self.payload_mass, self.cog)
+            print(f"[INFO] RTDE Services reconnceted, starting watchdog")
 
-            print("robot successfully reconnected and payload set.")
-            return True
+            self.rtde_c.setWatchdog(10.0) # 10 --> 10Hz --> 0.1s
+            self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
+            self.watchdog_thread.start()
         except Exception as e:
             print(f"Reconnect failed {e}")
-            return False
+            return
    
     def _load_paleta(self, ime):
         """Naloži vse mreže za paleto (1 ali 2) in nastavi atribute self.paletaX_safe, ..."""
@@ -361,7 +392,84 @@ class MyRobot:
         self.freedrive_active = False
 
     def disconnect(self):
-        self.rtde_c.disconnect()
-        self.rtde_r.disconnect()
-        self.rtde_io.disconnect()
-        self.gripper.disconnect()
+        print(f"[INFO] Prekinjam povezavo z robotom in kamero")
+        # Flag za ustavitev watchdog threada
+        self.watchdog_flag.set()
+        print("[INFO] Čakam da se watchdog zaustavi")
+        if self.watchdog_thread and self.watchdog_thread.is_alive():
+            self.watchdog_thread.join(timeout=1.5)
+        # Prekinjamo povezavo z robotom - vsemi interfaci in kamero
+        try:
+            self.rtde_c.disconnect()
+            self.rtde_r.disconnect()
+            self.gripper.disconnect()
+            print("[INFO] Control, recieve in IO uspešno disconnectano")
+        except Exception as e:
+            print(f"[WARN] Prišlo je do napake med prekinjanjem povezave: {e}")
+
+        if self.dash.safetystatus() == "Safetystatus: PROTECTIVE_STOP":
+            time.sleep(5)
+            self.dash.unlockProtectiveStop()
+            self.dash.disconnect()
+            print(f"[INFO] PS CLEARED: SHUTING DOWN")
+
+
+    def is_at_home(self, tol=0.01):
+        actual = np.array(self.rtde_r.getActualQ())
+        home = np.array(self.home_p)
+        # Izračunaj razliko med jointi, če je vsa manjša od tolerance, je OK
+        return np.all(np.abs(actual - home) < tol)
+    
+    def ensure_home(self, max_attempts=3, tol=0.05):
+        for attempt in range(max_attempts):
+            self.homing()
+            if self.is_at_home(tol=tol):
+                print(f"[INFO] Robot is at home (after {attempt+1} attempts)")
+                return
+            else:
+                print(f"[WARN] Robot not at home after attempt {attempt+1}")
+                time.sleep(0.5)
+        raise RuntimeError("[ERROR] Robot could not reach home position after multiple attempts!")
+    
+    def unlock_protective_stop(self):
+        """Protective stop se unlocka"""
+        host = "192.168.3.102"
+        try:
+            self.dash.unlockProtectiveStop()
+            print(f"[INFO] Protective stop cleared, reconnecting to RTDE...")
+            time.sleep(5)
+            try:
+                self.rtde_c.reconnect()
+                self.rtde_r.reconnect()
+                self.rtde_io.reconnect()
+                time.sleep(5)
+                self.rtde_c.reuploadScript()
+                print(f"[INFO] Successfully connected to RTDE")
+            except Exception as e:
+                print(f"[ERROR] Prišlo je do napake pri reconnectanju: {e}")
+            
+            try:
+                self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
+                self.watchdog_thread.start()
+            except Exception as e:
+                print(f"[ERROR] Vzpostavitev watchdoga ni uspela: {e}")
+        except Exception as e:
+            print(f"[ERROR] Protective stop not cleared: {e}")
+            return
+    
+    def protective_stop(self):
+        """prisilni stop, ni isto kot emergency stop"""
+        self.rtde_c.triggerProtectiveStop()
+        self.watchdog_flag.set()
+        time.sleep(1)
+        try:
+            if self.rtde_c.isConnected():
+                self.rtde_c.disconnect()
+                print("rtde_c disconnected")
+            else:
+                print("rtde_c je ze disconnectan")
+        except Exception as e:
+            print(f"[ERROR] Prišlo je do napake disconnectanja: {e}")
+
+        print(f"[WARN] PROTECTIVE STOP: Povezava z RTDE prekinjena, počisti protective stop")
+        

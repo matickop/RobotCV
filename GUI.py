@@ -1,5 +1,5 @@
 import time
-import numpy as np
+import numpy as np  
 from scipy.spatial.transform import Rotation as R
 import FreeSimpleGUI as sg
 import main
@@ -11,9 +11,11 @@ pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
 layout = [
     [sg.Text("RobotCV GUI", font=("Helvetica", 24), expand_x=True, justification='center')],
     [sg.Text("Robot control:")],
-    [sg.Button("Reconnect", s=14), sg.B("Activate gripper"), sg.B("STOP",button_color=("white", "red"), s=14)],
-    [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14), sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
-    [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2"), sg.B("X+"), sg.B("X-"), sg.B("Y+"), sg.B("Y-"), sg.B("Z+"), sg.B("Z-"), sg.B("Kamera paleta 2")],
+    [sg.Button("Reconnect", s=14), sg.B("Activate gripper"), sg.B("STOP",button_color=("white", "red"), s=14), sg.B("CLEAR STOP", s=14)],
+    [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14),
+      sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
+    [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2"), sg.B("X+"), sg.B("X-"),
+     sg.B("Y+"), sg.B("Y-"), sg.B("Z+"), sg.B("Z-"), sg.B("Kamera paleta 2"), sg.B("Info")],
     [sg.Text("Camera control:")],
     [sg.Button("Zajem slike", s=14), sg.B("Template matching", s=14), sg.B("Disconnect camera", s=14), sg.B("Connect camera", s=14)],
     [sg.Text("Prva paleta:")],
@@ -44,6 +46,17 @@ while True:
     if event ==  "Home":
         main.robot.homing()
 
+    if event == "Info":
+        #print(main.robot.rtde_c.getTCPOffset())
+        print(main.robot.dash.isConnected())
+        print(main.robot.dash.safetystatus())
+        print(main.robot.rtde_r.getSafetyStatusBits())
+        print(main.robot.rtde_r.getSafetyMode())
+        print(main.robot.rtde_r.isProtectiveStopped())
+
+    if event == "CLEAR STOP":
+        main.robot.unlock_protective_stop()
+
     if event == "Activate gripper":
         main.robot.gripper.activate()
         main.robot.gripper_close()
@@ -52,7 +65,8 @@ while True:
         main.robot.reconnect()
 
     if event == "STOP":
-        main.stop_event.set()
+        main.robot.protective_stop()
+        #main.stop_event.set()
 
     if event == "FreeDrive":
         if not main.robot.freedrive_active:

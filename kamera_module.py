@@ -2,8 +2,8 @@ import os
 import cv2
 import numpy as np
 from pypylon import pylon
-import timeit
 from pypylon import genicam
+import time
 
 
 class MyCamera:
@@ -24,7 +24,8 @@ class MyCamera:
         # Inicializacija kamere
         tlf = pylon.TlFactory.GetInstance()
         self.cam = pylon.InstantCamera(tlf.CreateFirstDevice())
-        self.cam.MaxNumBuffer = 130
+        self.cam.MaxNumBuffer = 20
+        time.sleep(1)
         self.cam.Open()
 
         self.template_path = None
@@ -49,22 +50,27 @@ class MyCamera:
         Zajame eno sliko in jo shrani v self.save_dir
         Vrne pot do shranjene slike.
         """
-        result = self.cam.GrabOne(timeout_ms)
-        if result.GrabSucceeded():
-            img = pylon.PylonImage()
-            img.AttachGrabResultBuffer(result)
-            save_path = os.path.join(self.save_dir, filename)
-            img.Save(pylon.ImageFileFormat_Png, save_path)
-            img.Release()
-            result.Release()
-            self.template_path = save_path
-
-            return save_path
-        else:
-            raise RuntimeError(
-                f"Grab failed: {result.ErrorCode} {result.ErrorDescription}"
-            )
-
+        try:
+            iterations = 5
+            for i in range(iterations):
+                result = self.cam.GrabOne(timeout_ms)
+                if result.GrabSucceeded():
+                    img = pylon.PylonImage()
+                    img.AttachGrabResultBuffer(result)
+                    save_path = os.path.join(self.save_dir, filename)
+                    img.Save(pylon.ImageFileFormat_Png, save_path)
+                    img.Release()
+                    result.Release()
+                    self.template_path = save_path
+                    return save_path
+                else:
+                    print("ITERACIJA")
+                    #Timeout
+                    time.sleep(1)
+        except Exception as e:
+            print(f"[ERROR] Camera grab failed: {e}")
+            # Optionally: reconnect logic here!
+            raise
     # ----------------------------------------------------------------------
 
     def template_match(self, template_path: str,
@@ -83,12 +89,14 @@ class MyCamera:
         najboljsa_sestavljanka = None
         najboljsa_datoteka = None
         najboljsa_lokacija = None
+        slovar_slik = {}
         
         for name, img in self.image_cache.items():
             if img is None:
                 continue
             res = cv2.matchTemplate(img, template_gray, method)
             min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
+            slovar_slik[name] = min_val
 
             if min_val <  najboljsi_score:
                 najboljsi_score = min_val
@@ -99,7 +107,9 @@ class MyCamera:
         if najboljsa_sestavljanka is None:
             print("Ni bilo najdenega ujemanja.")
             return None, None
-
+        # uredimo slovar score-ov od najmansega do najvecjega
+        urejen_slovar = dict(sorted(slovar_slik.items(), key=lambda item: item[1]))
+        
         # Označi najboljše ujemanje
         top_left = najboljsa_lokacija
         bottom_right = (top_left[0] + w, top_left[1] + h)
@@ -112,14 +122,16 @@ class MyCamera:
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-        return najboljsa_datoteka, najboljsi_score
+        return najboljsa_datoteka, najboljsi_score, urejen_slovar
 
     # ----------------------------------------------------------------------
 
     def release(self):
         """Zapre povezavo s kamero."""
-        if self.cam.IsOpen():
+        try:
             self.cam.Close()
+        except Exception as e:
+            print(f"[ERROR] Prišlo je do napake med prekinjanjem povezave s kamero: {e}")
 
     def connect(self):
         """Odpre kamero"""
@@ -133,7 +145,8 @@ class MyCamera:
         if save_dir is None:
             save_dir = "zajeta_celotna_slika"
             os.makedirs(save_dir, exist_ok=True)
-
+        
+        self.cam.Open()
         result = self.cam.GrabOne(timeout_ms)
         if result.GrabSucceeded():
             img = pylon.PylonImage()
@@ -150,4 +163,3 @@ class MyCamera:
                 f"Grab failed: {result.ErrorCode} {result.ErrorDescription}"
             )
         
-    
