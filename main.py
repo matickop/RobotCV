@@ -20,7 +20,7 @@ def shuffling_kosckov():
     robot.homing()
     print("homing")
     robot.gripper_close()
-
+    #kreiram flat_map kjer so vsi noter None, da se nemore ustavit kar tako
     for i in range(robot.paleta2_safe_joint.shape[0]):
         for j in range(robot.paleta2_safe_joint.shape[1]):
             if stop_event.is_set():
@@ -33,7 +33,6 @@ def shuffling_kosckov():
             ]
             robot.rtde_c.moveJ(path)
             robot.gripper_open() 
-            time.sleep(0.2)
 
             path = [
                 list(robot.paleta1_work_joint[i, j]) + [1.2, 0.6, 0.01],
@@ -43,14 +42,15 @@ def shuffling_kosckov():
             ]
             robot.rtde_c.moveJ(path)
             robot.gripper_close()
-            time.sleep(0.2)
             path = [
                 list(random_drop[i,j]) + [1.2, 0.6, 0.01],
                 list(random_safe[i, j]) + [1.2, 0.6, 0.0]                
             ]
             robot.rtde_c.moveJ(path)
 
-
+    flat_map = [[None, None] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+    np.save("flat_map.npy", flat_map)
+    print(flat_map)
     robot.homing()
 
 def pobiranje_s_kamero():
@@ -59,9 +59,21 @@ def pobiranje_s_kamero():
     print("Homing") 
     robot.gripper.move_and_wait_for_pos(229, speed=200, force=2)
     print("Gripper closed")
-
-    #kreiram array za pozicije slike v paleti 1 --> array z [0,0]...[3,5]
-    flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+    # ime za csv se kreira na zacetku
+    timestr = time.strftime("%Y_%m_%d-%H_%M_%S")
+    ime = f"Template_matching_scores_{timestr}"
+    # preverimo ce obstaja flat_map
+    if os.path.exists("flat_map.npy"):
+        flat_map = np.load("flat_map.npy", allow_pickle=True)
+        if np.all(flat_map==None):
+            flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+            flat_map = np.array(flat_map, dtype=object)
+        else:
+            print("Nekaj koščkov je odloženih")
+    else:
+        flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+        flat_map = np.array(flat_map, dtype=object)
+        print("Noben košček ni še odložen")
     #zanka za zajem slike in vse ostalo :D
     for i in range(robot.paleta2_kam_joint.shape[0]):
         for j in range(robot.paleta2_kam_joint.shape[1]):
@@ -70,8 +82,8 @@ def pobiranje_s_kamero():
                 return
             # 1) Gre nad kos za kamero
             path = [
-                list(robot.paleta2_kam_safe_joint[i, j]) + [1.2, 0.5, 0.0],
-                list(robot.paleta2_kam_joint[i, j]) + [1.2, 0.5, 0.0]
+                list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.5, 0.0],
+                list(map(float, robot.paleta2_kam_joint[i, j])) + [1.2, 0.5, 0.0]
             ]
             robot.rtde_c.moveJ(path)
 
@@ -79,12 +91,30 @@ def pobiranje_s_kamero():
             robot.ring_ON()
             cam.capture_image()
             robot.ring_OFF()
-            slika, score_match = cam.template_match(cam.template_path, show=False)
-            slika = slika.split(".")[0]
-            idx, kot = slika.split("_")
-            idx = int(idx)
-            kot = int(kot)
-            print(idx, kot)
+            slika, score_match, slovar = cam.template_match(cam.template_path, show=False)
+            # zapisem top 5 slik
+            with open(ime, "a", encoding="utf8") as f:
+                row = ",".join([f"{k}={v}" for k, v in list(slovar.items())[:5]])
+                f.write(row + "\n")
+
+            if slika == "template_prazna.png":
+                print(f"Pozicija je prazna, preskakujem...")
+                path = [
+                    list(map(float, robot.paleta2_kam_joint[i, j])) + [1.2, 0.5, 0.01],
+                    list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.5, 0.0],
+                ]
+                robot.rtde_c.moveJ(path)
+                continue
+            
+            try:
+                slika = slika.split(".")[0]
+                idx, kot = slika.split("_")
+                idx = int(idx)
+                kot = int(kot)
+                print(idx, kot)
+            except Exception as e:
+                print(f"Neveljavna slika ali indeks: {slika} | Error: {e}")
+                continue
 
             #gre samo nad tocko kamor bi postavil sliko
             if flat_map[idx] is not None:
@@ -94,39 +124,39 @@ def pobiranje_s_kamero():
                 target_work = robot.paleta2_work_joint[i, j].copy()
                 target_work[5] += np.deg2rad(kot)
                 path = [
-                    list(robot.paleta2_kam_safe_joint[i, j]) + [1.2, 0.6, 0.0],
-                    list(target_safe) + [1.2, 0.6, 0.0],
-                    list(target_work) + [0.2, 0.2, 0.0],
+                    list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.6, 0.01],
+                    list(map(float, target_safe)) + [1.2, 0.6, 0.005],
+                    list(map(float, target_work)) + [0.2, 0.2, 0.0],
                 ]
                 robot.rtde_c.moveJ(path)
                 print("premikam se nad sliko")
                 robot.gripper_open()
                 print("odpiram gripper")
-                time.sleep(0.3)
 
 
                 # 4) Dvig + pot do cilja v paleti 1
                 row, col = flat_map[idx]
+                print(row, col)
                 path = [
-                    list(target_safe) + [1.2, 0.6, 0.01],
-                    list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.01],
-                    list(robot.paleta1_drop_joint[row, col]) + [1.2, 0.2, 0.0]
+                    list(map(float, target_safe)) + [1.2, 0.6, 0.01],
+                    list(map(float, robot.paleta1_safe_joint[row, col])) + [1.2, 0.6, 0.005],
+                    list(map(float, robot.paleta1_drop_joint[row, col])) + [1.2, 0.2, 0.0],
                 ]
 
                 # 5) Place
                 robot.rtde_c.moveJ(path)
                 robot.gripper_close()
-                time.sleep(0.3)
 
                     # 6) Dvig nad odlagališče
                 path = [
-                    list(robot.paleta1_drop_joint[row, col]) + [1.2, 0.6, 0.01],
-                    list(robot.paleta1_safe_joint[row, col]) + [1.2, 0.6, 0.0]
+                    list(map(float, robot.paleta1_drop_joint[row, col])) + [1.2, 0.6, 0.005],
+                    list(map(float, robot.paleta1_safe_joint[row, col])) + [1.2, 0.6, 0.0],
                 ]
                 robot.rtde_c.moveJ(path)
                     
                 #ko polozi sliko, se v matriki pozicij namesto indeksov appenda None
                 flat_map[idx] = None
+                np.save("flat_map.npy", flat_map)
             else:
                 print("Slike ni mogoce postaviti na zapolnjeno mesto")
                 
@@ -138,9 +168,12 @@ def celoten_loop():
     stop_event.clear()
     while True:
         if stop_event.is_set():
+            print("[INFO] stopping program")
             break
+        
         shuffling_kosckov()
         if stop_event.is_set():
+            print("[INFO] stopping program")
             break
         pobiranje_s_kamero()
 
