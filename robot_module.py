@@ -10,6 +10,7 @@ import robotiq_gripper
 from scipy.spatial.transform import Rotation as R
 import time
 import threading
+from motion_monitor_module import MotionMonitor
 
 
 class MyRobot:
@@ -17,30 +18,41 @@ class MyRobot:
         #ROBOT PARAM:
         self.rob_freq = 500.0
         #WATCHDOG PARAM
-        self.watchdog_flag = threading.Event()
-        self.watchdog_thread = None
+        #self.watchdog_flag = threading.Event()
+        #self.watchdog_thread = None
+
         #RTDE connectionP
         self.rtde_c = rtde_control.RTDEControlInterface(host, self.rob_freq)
         self.rtde_r = rtde_receive.RTDEReceiveInterface(host)
         self.rtde_io = rtde_io.RTDEIOInterface(host)
         self.dash = dashboard_client.DashboardClient(host, 29999)
         self.dash.connect(2000)
+        print("[INFO] Povezava z robotom uspešna")
         ##REUPLOAD SCRIPTS - CLEAR PROTECTIVE STOP
         #self.rtde_c.reuploadScript()
+
+        #Start monitoringa-
+        self.monitor = MotionMonitor(self)
+        self.motion_active = False
+        self.current_target_q = None
+
         #START WATCHDOG
-        print("[INFO] Povezava z robotom uspešna")
-        self.rtde_c.setWatchdog(10.0) # 10 --> 10Hz --> 0.1s
-        self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
-        self.watchdog_thread.start()
-        print(f"[INFO] Watchdog nastavljen na 10Hz")
+        #self.rtde_c.setWatchdog(10.0) # 10 --> 10Hz --> 0.1s
+        #self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
+        #self.watchdog_thread.start()
+        #print(f"[INFO] Watchdog nastavljen na 10Hz")
+
         # gripper connection
         self.gripper = robotiq_gripper.RobotiqGripper()
         self.gripper.connect(host, 63352)
+        print(f"[INFO] Robotiq gripper povezan na {host}:63352")
+
         # parametri hitrosti
         self.acc = 0.2
         self.accq = 0.4
         self.vel = 0.4
         self.velq = 0.6
+
         # home position
         self.home_p = [ math.radians(-90),
                         math.radians(-90),
@@ -48,17 +60,21 @@ class MyRobot:
                         math.radians(-90),
                         math.radians(90),
                         math.radians(0)]
+        
         # HOMING
+        print(f"[INFO] Inicializacija hominga")
         self.homing()
         self.ensure_home(max_attempts=3, tol=0.05)
+        print(f"[INFO] Homing zaključen")
         # GRIPPER AKTIVIRAN
+        print(f"[INFO] Aktivacija gripperja")
         self.gripper.activate()
         self.gripper_close()
         # generacija mrez
         self._load_paleta(1) #atributi se shranijo v 3 palete glede na z offset, vse so pretvorjene v joint space:    
                             # paleta1_safe/_joint, paleta1_work/_joint, paleta1_kam/joint 
         self._load_paleta(2)# isto sam da so paleta2_xsdasdsad
-        print(f"[INFO] Mreže generirane")
+        print(f"[INFO] Mreže naložene")
         # loadanje kotov
         if os.path.exists("koti.npy"):
             self.pobrani_koti = np.load("koti.npy", allow_pickle=True).tolist()
@@ -67,10 +83,10 @@ class MyRobot:
 
         # ostali parametri
         self.kamera_y = 0.1
-        self.safe_z = 0.04
+        self.safe_z = 0.05
         self.work_z = 0.0112
         self.drop_z = 0.0152
-        self.kamera_z = 0.0245
+        self.kamera_z = 0.0295
         self.freedrive_active = False
         self.payload_mass = 1.15
         self.cog = [0, -0.004, 0.045]
@@ -79,22 +95,22 @@ class MyRobot:
         self.tcp_rotation_paleta2 = None 
         self.rtde_c.setPayload(self.payload_mass, self.cog)
 
-    def watchdog_kicker(self):
-        varnostni_faktor = 0.01 # 10ms
-        perioda = 0.1
-        ciljni_cas = perioda - varnostni_faktor
-        while not self.watchdog_flag.is_set():
-            start_time = time.monotonic()
-            try:
-                self.rtde_c.kickWatchdog()
-            except rtde_control.RTDEException as e:
-                print(f"[ERROR] Napaka WATCHDOG - prekinjena povezava z robotom: {e}")
-                break
-            elapsed = time.monotonic() - start_time
-            sleep_time = ciljni_cas - elapsed
-            if sleep_time > 0:
-                sleep_time -= varnostni_faktor
-                time.sleep(sleep_time)
+    # def watchdog_kicker(self):
+    #     varnostni_faktor = 0.01 # 10ms
+    #     perioda = 0.1
+    #     ciljni_cas = perioda - varnostni_faktor
+    #     while not self.watchdog_flag.is_set():
+    #         start_time = time.monotonic()
+    #         try:
+    #             self.rtde_c.kickWatchdog()
+    #         except rtde_control.RTDEException as e:
+    #             print(f"[ERROR] Napaka WATCHDOG - prekinjena povezava z robotom: {e}")
+    #             break
+    #         elapsed = time.monotonic() - start_time
+    #         sleep_time = ciljni_cas - elapsed
+    #         if sleep_time > 0:
+    #             sleep_time -= varnostni_faktor
+    #             time.sleep(sleep_time)
 
     def reconnect(self, host="192.168.3.102"):
         try:
@@ -103,11 +119,8 @@ class MyRobot:
             self.rtde_io.reconnect()
             self.dash.connect(2000)
             self.rtde_c.setPayload(self.payload_mass, self.cog)
-            print(f"[INFO] RTDE Services reconnceted, starting watchdog")
+            print(f"[INFO] RTDE Services reconnceted")
 
-            self.rtde_c.setWatchdog(10.0) # 10 --> 10Hz --> 0.1s
-            self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
-            self.watchdog_thread.start()
         except Exception as e:
             print(f"Reconnect failed {e}")
             return
@@ -126,8 +139,10 @@ class MyRobot:
             setattr(self, f"paleta{ime}_{suf}_joint", joints)
 
 
-    def homing(self):  
+    def homing(self):
+        print(f"[INFO] Izvajam homing...")  
         self.rtde_c.moveJ(self.home_p, self.accq, self.velq)
+        print(f"[INFO] Homing zaključen.")
 
     def initialize(self):
         self.homing()
@@ -169,71 +184,115 @@ class MyRobot:
 
     def generiranje_mreze(self, a, b, koti, paleta):
         poz = np.zeros((a, b, 6))
+        # Pretvori v numpy array
         zl, zd, sl, sd = [np.array(k, dtype=float) for k in koti]
 
-        #rotacija mreze okoli koordinatnega sistema robota
-        vektor_x = (sl[:2] - zl[:2])
-        vektor_x /= np.linalg.norm(vektor_x)
+        # --- 1. ROTACIJA ---
+        # Osnovna rotacija iz prve točke (pri tebi [0, 3.14, 0])
+        base_rot = zl[3:] 
+        final_rot = base_rot
 
-        rotacija_mreze = np.degrees(np.arctan2(vektor_x[1], vektor_x[0]))
-        R0 = R.from_rotvec(self.inital_tcp_rotation)
-        Rz = R.from_euler("z", rotacija_mreze, degrees=True)
-        Rnew = Rz*R0 
-        new_rotvec = Rnew.as_rotvec()
-        
-        if paleta == "1":
-            self.tcp_rotation_paleta1 = new_rotvec
-            tcp_rot = self.tcp_rotation_paleta1
-        elif paleta == "2":
-            self.tcp_rotation_paleta2 = new_rotvec
-            tcp_rot = self.tcp_rotation_paleta2
+        # SAMO ZA PALETO 2 vklopimo korekcijo rotacije
+        if paleta == "2":
+            # Izračunamo vektor leve stranice (ZL -> ZD)
+            # Pri tvojih podatkih ta stranica teče vzdolž Y osi
+            dy = zd[1] - zl[1] # Dolžina stranice (cca 0.34m)
+            dx = zd[0] - zl[0] # Odmik v X (pri tebi 0.00082m)
+            
+            # Izračun kota odklona od Y osi
+            # Če bi bila paleta ravna, bi bil dx = 0.
+            kot_odklona = np.arctan2(dx, dy) 
+            
+            print(f"--- DIAGNOSTIKA PALETE 2 ---")
+            print(f"Odmik X na dolžini 34cm: {dx*1000:.2f} mm")
+            print(f"Izračunan kot rotacije: {np.degrees(kot_odklona):.3f}°")
+            
+            # Uporabimo ta kot za rotacijo gripperja.
+            # Če paleta "visi" v desno (pozitivni kot), moramo tudi gripper zavrteti v desno.
+            # Opomba: Pri UR robotih z rotacijo [0, pi, 0] je včasih smer Z osi obrnjena,
+            # zato je treba preveriti predznak.
+            # Začnemo z MINUS kotom (standardna rotacija koordinatnega sistema). 
+            # Če bo še vedno postrani, spremeni spodnji '-' v '+'.
+            
+            R_base = R.from_rotvec(base_rot)
+            R_corr = R.from_euler('z', -kot_odklona, degrees=False) 
+            final_rot = (R_base*R_corr).as_rotvec()
+            
+            self.tcp_rotation_paleta2 = final_rot
+        else:
+            # Za Paleto 1 pustimo originalno, ker praviš da dela
+            self.tcp_rotation_paleta1 = base_rot
 
-        print(f"TCP rotacija okoli palete1 je: {self.tcp_rotation_paleta1}")
-        print(f"TCP rotacija okoli palete2 je: {self.tcp_rotation_paleta2}")
+        # --- 2. OFFSETI ---
+        OFFSET_WORK = 0.0008   # Dotik dna
+        OFFSET_DROP = 0.0045   # 3mm nad dnom za spust
 
         mreza_safe  = np.zeros((a, b, 6))
         mreza_work  = np.zeros((a, b, 6))
+        mreza_drop  = np.zeros((a, b, 6))
         mreza_kam   = np.zeros((a, b, 6))
         mreza_kam_safe = np.zeros((a, b, 6))
-        mreza_drop = np.zeros((a, b, 6))
 
         for i in range(a):
+            # Interpolacija robov (ZL->SL in ZD->SD)
             v_left = zl - (zl - sl)*(i/(a-1))
             v_right = zd - (zd - sd)*(i/(a-1))
+            
             for j in range(b):
-                poz[i,j] = v_left + (v_right - v_left)*(j/(b - 1))
-                poz[i,j][2] = 0.0095
-                poz[i,j][3:] = tcp_rot
-                #safe
-                pos_safe = poz[i,j].copy()
-                pos_safe[2] = self.safe_z
-                mreza_safe[i, j] = pos_safe
-                
-                #work
-                pos_work = poz[i, j].copy()
-                pos_work[2] = self.work_z
+                # Bilinearna interpolacija točke
+                interpolirana_tocka = v_left + (v_right - v_left)*(j/(b - 1))
+                z_tla = interpolirana_tocka[2] 
+
+                # Osnovna točka
+                poz[i,j] = interpolirana_tocka
+                poz[i,j][3:] = final_rot
+
+                # Work (Interpoliran Z + Rotiran TCP)
+                pos_work = poz[i,j].copy()
+                pos_work[2] = z_tla + OFFSET_WORK
                 mreza_work[i, j] = pos_work
 
-                #drop
+                # Drop
                 pos_drop = poz[i,j].copy()
-                pos_drop[2] = self.drop_z
+                pos_drop[2] = z_tla + OFFSET_DROP
                 mreza_drop[i, j] = pos_drop
 
-                #kamera
+                # Safe (Fiksna višina)
+                pos_safe = poz[i,j].copy()
+                pos_safe[2] = self.safe_z 
+                pos_safe[3:] = final_rot # Da se robot ne vrti med dvigom in spustom
+                mreza_safe[i, j] = pos_safe
+                
+                # Kamera
                 pos_kam = poz[i,j].copy()
                 pos_kam[1] += self.kamera_y
                 pos_kam[2] = self.kamera_z
+                pos_kam[3:] = final_rot
                 mreza_kam[i, j] = pos_kam
 
-                #kamera safe
+                # Kamera Safe
                 pos_kam_safe= poz[i,j].copy()
                 pos_kam_safe[1] += self.kamera_y
                 pos_kam_safe[2] = self.safe_z
+                pos_kam_safe[3:] = final_rot
                 mreza_kam_safe[i, j] = pos_kam_safe 
 
-
-
         return mreza_safe, mreza_work, mreza_kam, mreza_kam_safe, mreza_drop
+    
+    def pomik_rotacija(self, position, kot):
+        """
+        Funkcija izračuna nov TCP z dodano rotacijo slike
+
+        :param position: Pozicija koscka slike v TCP koordinatah
+        :param kot: Kot rotacije v stopinjah
+        """
+        R0 = R.from_rotvec(np.pi * np.array([0, 1, 0]))
+        R_add = R.from_euler('z', kot, degrees=True)
+        R_new = R0 * R_add
+
+        position[3:] = R_new.as_rotvec()
+
+        return position, R_new.as_rotvec()
     
     def pripravi_in_shrani_paleto(self, ime, koti, oznaka, a=4, b=6):
         # generiranje mrež (pose)
@@ -266,46 +325,42 @@ class MyRobot:
         Pretvori mrežo TCP pozicij v mrežo joint konfiguracij.
         """
         mreza_joint = np.zeros_like(mreza_pose)
-        q_seed = self.rtde_r.getActualQ()
+        q_seed = self.home_p
 
         for i in range(mreza_joint.shape[0]):
             for j in range(mreza_joint.shape[1]):
                 q_target = self.rtde_c.getInverseKinematics(mreza_pose[i, j], q_seed)
-                # izberi varnega kandidata za wrist6
-                print("q_target type:", type(q_target), "q_target[5]:", q_target[5])
-                q_target[5] = self.pick_wrist6_candidate(q_target[5], q_seed[5])
                 mreza_joint[i, j] = q_target
-                q_seed = q_target  # seed za naslednjo točko
 
         return mreza_joint 
 
-    def pick_wrist6_candidate(self, q6_target, q6_current, limit_deg=180, alpha=0.002):
-        # Evaluate q6_target + k*2π for k in {-1, 0, +1}
-        candidates = [q6_target + k*2*np.pi for k in (-1, 0, 1)]
-        def cost(q6):
-            dist = abs(q6 - q6_current)
-            # penalize proximity to soft limits (±limit_deg)
-            q6_deg = np.degrees(q6)
-            proximity = max(0.0, abs(q6_deg) - (limit_deg - 20))  # start penalizing near the edge
-            return dist + alpha * proximity
-        # choose the candidate with minimum cost, but discard those beyond hard limit
-        hard_limit_deg = 250
-        feasible = [c for c in candidates if abs(np.degrees(c)) <= hard_limit_deg]
-        if not feasible:
-            feasible = candidates
-        return min(feasible, key=cost)
+    # def pick_wrist6_candidate(self, q6_target, q6_current, limit_deg=180, alpha=0.002):
+    #     # Evaluate q6_target + k*2π for k in {-1, 0, +1}
+    #     candidates = [q6_target + k*2*np.pi for k in (-1, 0, 1)]
+    #     def cost(q6):
+    #         dist = abs(q6 - q6_current)
+    #         # penalize proximity to soft limits (±limit_deg)
+    #         q6_deg = np.degrees(q6)
+    #         proximity = max(0.0, abs(q6_deg) - (limit_deg - 20))  # start penalizing near the edge
+    #         return dist + alpha * proximity
+    #     # choose the candidate with minimum cost, but discard those beyond hard limit
+    #     hard_limit_deg = 250
+    #     feasible = [c for c in candidates if abs(np.degrees(c)) <= hard_limit_deg]
+    #     if not feasible:
+    #         feasible = candidates
+    #     return min(feasible, key=cost)
 
-    def generiraj_random_joint_mreze(self, safe_joint, work_joint):
+    def generiraj_random_joint_mreze(self, safe_tcp, work_tcp):
         """
         Sprejme dve obstoječi joint mreži (safe in work) in vrne
         naključno premešani mreži, kjer ima vsaka točka še random rotacijo q6.
         """
-        a, b, _ = safe_joint.shape
+        a, b, _ = safe_tcp.shape
         n = a * b
 
         # splošči
-        flat_safe = safe_joint.reshape(n, 6).copy()
-        flat_work = work_joint.reshape(n, 6).copy()
+        flat_safe = safe_tcp.reshape(n, 6).copy()
+        flat_work = work_tcp.reshape(n, 6).copy()
 
         # permutacija
         perm = np.random.permutation(n)
@@ -313,41 +368,74 @@ class MyRobot:
         flat_work = flat_work[perm]
 
         # možne rotacije okoli zapestja
-        rotations = [-np.pi/2, 0.0, np.pi/2, np.pi]
-
-        q_seed = self.rtde_r.getActualQ()
+        # rotations = [-np.pi/2, 0.0, np.pi/2, np.pi]
+        rotations = [-90, 0, 90, 180]  # v stopinjah
 
         for i in range(n):
             ang = np.random.choice(rotations)
-
-            # dodaj rotacijo na q6 (joint 5 v Python indeksu = 5)
-            flat_safe[i][5] = self.pick_wrist6_candidate(flat_safe[i][5] + ang, q_seed[5])
-            flat_work[i][5] = self.pick_wrist6_candidate(flat_work[i][5] + ang, flat_safe[i][5])
-
-            q_seed = flat_safe[i]  # seed za naslednjo točko
+            flat_safe[i], _ = self.pomik_rotacija(flat_safe[i], ang)
+            flat_work[i], _ = self.pomik_rotacija(flat_work[i], ang)
 
         # nazaj v obliko
         random_safe = flat_safe.reshape(a, b, 6)
         random_work = flat_work.reshape(a, b, 6)
 
-        return random_safe, random_work
+        #damo v joint koordinate
+        random_safe_joint = self.pretvori_v_joint_mreze(random_safe)
+        random_work_joint = self.pretvori_v_joint_mreze(random_work)
+
+        return random_safe_joint, random_work_joint   
 
     def move_fine(self, position):
         self.rtde_c.moveL(position, speed = 0.2, acceleration=0.3)
-
-    def move_with_random_rotation(self, position):
-        position[2] = self.safe_z
-        q_position = self.rtde_c.getInverseKinematics(position)
-        possible_rotation = [-np.pi/2, 0, np.pi/2, np.pi]
-        ang = random.choice(possible_rotation)
-        q_position[5] += ang
-        self.rtde_c.moveJ(q_position, self.accq, self.velq)
 
     def joint_move_to_position(self, position):
         self.rtde_c.moveJ(position, self.accq, self.velq)
 
     def move_to_position(self, position): # "Varna" pozicija, z je vec kot dovolj visok
         self.rtde_c.moveJ(position, self.accq, self.velq)
+
+    def moveJ_asinh(self, position):
+        if self.motion_active:
+            print("[WARN] Robot je že v gibanju, moveJ_asinh ni mogoč")
+            return
+        q_start=self.rtde_r.getActualQ()
+        self.monitor.start(q_start, position)
+        try:
+            self.rtde_c.moveJ(position, self.accq, self.velq, True)
+        except rtde_control.RTDEException as e:
+            print(f"[ERROR] moveJ_asinh napaka: {e}")
+            self.monitor.stop()
+            return False
+        
+        self.motion_active = True
+        self.current_target_q = position
+        return True
+
+    def abort_motion(self):
+        try:
+            self.rtde_c.stopScript()
+        except Exception as e:
+            print(f"[WARN] stopScript exception: {e}")
+        self.motion_active = False
+        self.current_target_q = None
+        self.monitor.stop()
+
+    def wait_until_done(self, tol=0.01, timeout=30):
+        start = time.time()
+        while time.time() - start < timeout:
+            if not self.motion_active:
+                return self.monitor.finished_ok()
+            if not self.rtde_c.isProgramRunning():
+                actual = self.rtde_r.getActualQ()
+                ok = np.all(np.abs(np.array(actual) - np.array(self.current_target_q)) < tol)
+                self.motion_active = False
+                self.current_target_q = None
+                return ok
+            time.sleep(0.05)
+        print("[ERROR] Timeout")
+        self.abort_motion()
+        return False
 
     def pick_and_place_position(self, position): # S to pozicijo se koscek pobere in odlozi
         position[2] = self.work_z
@@ -393,12 +481,7 @@ class MyRobot:
 
     def disconnect(self):
         print(f"[INFO] Prekinjam povezavo z robotom in kamero")
-        # Flag za ustavitev watchdog threada
-        self.watchdog_flag.set()
-        print("[INFO] Čakam da se watchdog zaustavi")
-        if self.watchdog_thread and self.watchdog_thread.is_alive():
-            self.watchdog_thread.join(timeout=1.5)
-        # Prekinjamo povezavo z robotom - vsemi interfaci in kamero
+
         try:
             self.rtde_c.disconnect()
             self.rtde_r.disconnect()
@@ -406,12 +489,6 @@ class MyRobot:
             print("[INFO] Control, recieve in IO uspešno disconnectano")
         except Exception as e:
             print(f"[WARN] Prišlo je do napake med prekinjanjem povezave: {e}")
-
-        if self.dash.safetystatus() == "Safetystatus: PROTECTIVE_STOP":
-            time.sleep(5)
-            self.dash.unlockProtectiveStop()
-            self.dash.disconnect()
-            print(f"[INFO] PS CLEARED: SHUTING DOWN")
 
 
     def is_at_home(self, tol=0.01):
@@ -448,11 +525,7 @@ class MyRobot:
             except Exception as e:
                 print(f"[ERROR] Prišlo je do napake pri reconnectanju: {e}")
             
-            try:
-                self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
-                self.watchdog_thread.start()
-            except Exception as e:
-                print(f"[ERROR] Vzpostavitev watchdoga ni uspela: {e}")
+    
         except Exception as e:
             print(f"[ERROR] Protective stop not cleared: {e}")
             return
@@ -460,7 +533,6 @@ class MyRobot:
     def protective_stop(self):
         """prisilni stop, ni isto kot emergency stop"""
         self.rtde_c.triggerProtectiveStop()
-        self.watchdog_flag.set()
         time.sleep(1)
         try:
             if self.rtde_c.isConnected():

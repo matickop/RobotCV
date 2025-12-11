@@ -13,9 +13,10 @@ layout = [
     [sg.Text("Robot control:")],
     [sg.Button("Reconnect", s=14), sg.B("Activate gripper"), sg.B("STOP",button_color=("white", "red"), s=14), sg.B("CLEAR STOP", s=14)],
     [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14),
-      sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
-    [sg.B("Izhodiščna točka palete 1"), sg.B("Izhodiščna točka palete 2"), sg.B("X+"), sg.B("X-"),
-     sg.B("Y+"), sg.B("Y-"), sg.B("Z+"), sg.B("Z-"), sg.B("Kamera paleta 2"), sg.B("Info")],
+        sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
+    [sg.B("Izhodiščna točka palete 1:1"), sg.B("Izhodiščna točka palete 1:2"), sg.B("Izhodiščna točka palete 1:3"), sg.B("Izhodiščna točka palete 1:4")],
+    [sg.B("Izhodiščna točka palete 2:1"), sg.B("Izhodiščna točka palete 2:2"), sg.B("Izhodiščna točka palete 2:3"), sg.B("Izhodiščna točka palete 2:4")],
+    [sg.B("X+"), sg.B("X-"), sg.B("Y+"), sg.B("Y-"), sg.B("Z+"), sg.B("Z-"), sg.B("Z-0.001"), sg.B("Kamera paleta 2"), sg.B("Info")],
     [sg.Text("Camera control:")],
     [sg.Button("Zajem slike", s=14), sg.B("Template matching", s=14), sg.B("Disconnect camera", s=14), sg.B("Connect camera", s=14)],
     [sg.Text("Prva paleta:")],
@@ -122,11 +123,11 @@ while True:
         main.robot.paleta2_drop_joint) = main.robot.pripravi_in_shrani_paleto("paleta2", main.robot.pobrani_koti[4:], "2")
         sg.popup("Mreža palete 2 generirana!")
 
-    elif event == "Naloži palete 1":
+    elif event == "Naloži paleto 1":
         main.robot._load_paleta(1)
         sg.popup("Paleta 1 naložena")
 
-    elif event == "Naloži palete 2":
+    elif event == "Naloži paleto 2":
         main.robot._load_paleta(2)
         sg.popup("Paleta 2 naložena!")
 
@@ -134,7 +135,9 @@ while True:
         threading.Thread(target=main.shuffling_kosckov, daemon=True).start()
 
     if event == "Zajem slike":
+        main.robot.ring_ON()
         main.cam.capture_image()
+        main.robot.ring_OFF()
 
     if event == "Celoten loop":
         threading.Thread(target=main.celoten_loop  , daemon=True).start()
@@ -158,11 +161,29 @@ while True:
         main.robot.generiranje_nakljucne_mreze(main.robot.paleta2.shape[0], main.robot.paleta2.shape[1], main.robot.paleta2)
         print(main.robot.generiranje_nakljucne_mreze(main.robot.paleta2.shape[0], main.robot.paleta2.shape[1], main.robot.paleta2))
 
-    if event == "Izhodiščna točka palete 1":
-        main.robot.move_to_position(main.robot.paleta1_safe_joint[0,0])
+    if event == "Izhodiščna točka palete 1:1":
+        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[0,0])
 
-    if event == "Izhodiščna točka palete 2":
-        main.robot.move_to_position(main.robot.paleta2_safe_joint[0,0])
+    if event == "Izhodiščna točka palete 1:2":
+        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[0,5])
+    
+    if event == "Izhodiščna točka palete 1:3":
+        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[3,0])
+
+    if event == "Izhodiščna točka palete 1:4":
+        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[3,5])
+
+    if event == "Izhodiščna točka palete 2:1":
+        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[0,0])
+
+    if event == "Izhodiščna točka palete 2:2":
+        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[0,5])
+    
+    if event == "Izhodiščna točka palete 2:3":
+        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[3,0])
+
+    if event == "Izhodiščna točka palete 2:4":
+        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[3,5])
 
     if event == "Kamera paleta 2":
         main.robot.move_to_position(main.robot.paleta2_kam_safe_joint[0,0])
@@ -188,3 +209,6 @@ while True:
 
     if event == "Z-":
         main.fine_move_tcp(dz=-0.0001)
+
+    if event == "Z-0.001":
+        main.fine_move_tcp(dz=-0.001)

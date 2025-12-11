@@ -16,42 +16,51 @@ pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
 
 def shuffling_kosckov():
     stop_event.clear()
-    random_safe, random_drop = robot.generiraj_random_joint_mreze(robot.paleta2_safe_joint, robot.paleta2_drop_joint)
-    robot.homing()
-    print("homing")
-    robot.gripper_close()
-    #kreiram flat_map kjer so vsi noter None, da se nemore ustavit kar tako
-    for i in range(robot.paleta2_safe_joint.shape[0]):
-        for j in range(robot.paleta2_safe_joint.shape[1]):
-            if stop_event.is_set():
-                print("STOP - prekinitev programa")
-                return
-            #pot do koscka:
-            path = [
-                list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.6, 0],
-                list(robot.paleta1_work_joint[i, j]) + [0.3, 0.2, 0]
-            ]
-            robot.rtde_c.moveJ(path)
-            robot.gripper_open() 
-
-            path = [
-                list(robot.paleta1_work_joint[i, j]) + [1.2, 0.6, 0.01],
-                list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.2, 0.01],
-                list(random_safe[i, j]) + [1.2, 0.6, 0.01],
-                list(random_drop[i, j]) + [1.2, 0.2, 0.0]
-            ]
-            robot.rtde_c.moveJ(path)
+    if os.path.exists("flat_map.npy"):
+        flat_map = np.load("flat_map.npy", allow_pickle=True)
+        flat2d = np.full((4,6), None, dtype=object)
+        if np.all(flat_map==None):
+            print(f"[INFO] Vsi koščki so pobrani, začenjam shufflanje...")
+            random_safe, random_drop = robot.generiraj_random_joint_mreze(robot.paleta2_safe, robot.paleta2_drop)
+            robot.homing()
+            print("homing")
             robot.gripper_close()
-            path = [
-                list(random_drop[i,j]) + [1.2, 0.6, 0.01],
-                list(random_safe[i, j]) + [1.2, 0.6, 0.0]                
-            ]
-            robot.rtde_c.moveJ(path)
+            #kreiram flat_map kjer so vsi noter None, da se nemore ustavit kar tako
+            for i in range(robot.paleta2_safe_joint.shape[0]):
+                for j in range(robot.paleta2_safe_joint.shape[1]):
+                    if stop_event.is_set():
+                        print("STOP - prekinitev programa")
+                        return
+                    #pot do koscka:
+                    path = [
+                        list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.8, 0],
+                        list(robot.paleta1_work_joint[i, j]) + [0.3, 0.3, 0]
+                    ]
+                    robot.rtde_c.moveJ(path)
+                    robot.gripper_open() 
 
-    flat_map = [[None, None] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
-    np.save("flat_map.npy", flat_map)
-    print(flat_map)
-    robot.homing()
+                    path = [
+                        list(robot.paleta1_work_joint[i, j]) + [1.2, 0.8, 0.01],
+                        list(robot.paleta1_safe_joint[i, j]) + [1.2, 0.3, 0.01],
+                        list(random_safe[i, j]) + [1.2, 0.8, 0.01],
+                        list(random_drop[i, j]) + [1.2, 0.3, 0.0]
+                    ]
+                    robot.rtde_c.moveJ(path)
+                    robot.gripper_close()
+                    path = [
+                        list(random_drop[i,j]) + [1.2, 0.8, 0.01],
+                        list(random_safe[i, j]) + [1.2, 0.3, 0.0]                
+                    ]
+                    robot.rtde_c.moveJ(path)
+
+                    flat2d[i,j] = [i,j]  #nastavim flat2d na i,j
+                    np.save("flat_map.npy", flat2d.flatten())
+
+            flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+            flat_map = np.array(flat_map, dtype=object)
+            np.save("flat_map.npy", flat_map)
+            print(f"[INFO] Shuffling complete. New flat_map.npy created.")
+            robot.homing()
 
 def pobiranje_s_kamero():
     stop_event.clear()
@@ -61,19 +70,12 @@ def pobiranje_s_kamero():
     print("Gripper closed")
     # ime za csv se kreira na zacetku
     timestr = time.strftime("%Y_%m_%d-%H_%M_%S")
-    ime = f"Template_matching_scores_{timestr}"
+    ime = f"Template_CSV_datoteke/Template_matching_scores_{timestr}"
     # preverimo ce obstaja flat_map
     if os.path.exists("flat_map.npy"):
         flat_map = np.load("flat_map.npy", allow_pickle=True)
-        if np.all(flat_map==None):
-            flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
-            flat_map = np.array(flat_map, dtype=object)
-        else:
-            print("Nekaj koščkov je odloženih")
-    else:
-        flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
         flat_map = np.array(flat_map, dtype=object)
-        print("Noben košček ni še odložen")
+        print(f"[INFO] Naložena obstoječa flat_map.npy: {flat_map}")
     #zanka za zajem slike in vse ostalo :D
     for i in range(robot.paleta2_kam_joint.shape[0]):
         for j in range(robot.paleta2_kam_joint.shape[1]):
@@ -82,7 +84,7 @@ def pobiranje_s_kamero():
                 return
             # 1) Gre nad kos za kamero
             path = [
-                list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.5, 0.0],
+                list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.8, 0.0],
                 list(map(float, robot.paleta2_kam_joint[i, j])) + [1.2, 0.5, 0.0]
             ]
             robot.rtde_c.moveJ(path)
@@ -116,17 +118,15 @@ def pobiranje_s_kamero():
                 print(f"Neveljavna slika ali indeks: {slika} | Error: {e}")
                 continue
 
-            #gre samo nad tocko kamor bi postavil sliko
+            #Gre nad koscek, katerege je zajel s kamero(ce je koscke bil prepoznan)
             if flat_map[idx] is not None:
                 # 3) Pick iz palete 2 - rotiranje 
-                target_safe = robot.paleta2_safe_joint[i, j].copy()
-                target_safe[5] += np.deg2rad(kot)
-                target_work = robot.paleta2_work_joint[i, j].copy()
-                target_work[5] += np.deg2rad(kot)
+                target_safe = robot.rtde_c.getInverseKinematics(robot.pomik_rotacija(robot.paleta2_safe[i, j], kot)[0], robot.home_p)
+                target_work = robot.rtde_c.getInverseKinematics(robot.pomik_rotacija(robot.paleta2_work[i, j], kot)[0], robot.home_p)
                 path = [
-                    list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.6, 0.01],
-                    list(map(float, target_safe)) + [1.2, 0.6, 0.005],
-                    list(map(float, target_work)) + [0.2, 0.2, 0.0],
+                    list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.8, 0.01],
+                    list(map(float, target_safe)) + [1.2, 0.8, 0.005],
+                    list(map(float, target_work)) + [0.2, 0.3, 0.0],
                 ]
                 robot.rtde_c.moveJ(path)
                 print("premikam se nad sliko")
@@ -137,10 +137,11 @@ def pobiranje_s_kamero():
                 # 4) Dvig + pot do cilja v paleti 1
                 row, col = flat_map[idx]
                 print(row, col)
+                print(robot.paleta1_safe_joint[row, col])
                 path = [
-                    list(map(float, target_safe)) + [1.2, 0.6, 0.01],
-                    list(map(float, robot.paleta1_safe_joint[row, col])) + [1.2, 0.6, 0.005],
-                    list(map(float, robot.paleta1_drop_joint[row, col])) + [1.2, 0.2, 0.0],
+                    list(map(float, target_safe)) + [1.2, 0.8, 0.01],
+                    list(map(float, robot.paleta1_safe_joint[row, col])) + [1.2, 0.8, 0.005],
+                    list(map(float, robot.paleta1_drop_joint[row, col])) + [1.2, 0.3, 0.0],
                 ]
 
                 # 5) Place
@@ -149,7 +150,7 @@ def pobiranje_s_kamero():
 
                     # 6) Dvig nad odlagališče
                 path = [
-                    list(map(float, robot.paleta1_drop_joint[row, col])) + [1.2, 0.6, 0.005],
+                    list(map(float, robot.paleta1_drop_joint[row, col])) + [1.2, 0.8, 0.005],
                     list(map(float, robot.paleta1_safe_joint[row, col])) + [1.2, 0.6, 0.0],
                 ]
                 robot.rtde_c.moveJ(path)
@@ -160,22 +161,38 @@ def pobiranje_s_kamero():
             else:
                 print("Slike ni mogoce postaviti na zapolnjeno mesto")
                 
-            
+    if not np.all(flat_map==None):
+        print(f"[INFO] Pobiranje končano, vsi koščki niso pobrani, kljub temu so vsi v flat_map-u nastavljeni na None.")
+        flat_map = [None for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+        np.save("flat_map.npy", flat_map)
+
     #homing nazaj
     robot.homing()
 
 def celoten_loop():
     stop_event.clear()
     while True:
-        if stop_event.is_set():
-            print("[INFO] stopping program")
-            break
-        
-        shuffling_kosckov()
-        if stop_event.is_set():
-            print("[INFO] stopping program")
-            break
-        pobiranje_s_kamero()
+        if os.path.exists("flat_map.npy"):
+            zasedenost = np.load("flat_map.npy", allow_pickle=True)
+            if stop_event.is_set():
+                print("[INFO] stopping program")
+                break
+            if np.all(zasedenost==None):
+                print(f"[INFO] Vsi koščki so pobrani, začenjam shufflanje...")
+                shuffling_kosckov()
+            else:
+                if stop_event.is_set():
+                    print("[INFO] stopping program")
+                    break
+                print(f"[INFO] Koščki so na plaleti 2, začenjam pobiranje s kamero...")
+                pobiranje_s_kamero()
+        else:
+            print(f"[INFO] Datoteka flat_map.npy ne obstaja, kreiram novo in začenjam pobiranje s kamero...")
+            flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
+            flat_map = np.array(flat_map, dtype=object)
+            np.save("flat_map.npy", flat_map)
+            pobiranje_s_kamero()
+        time.sleep(0.5)
 
 def zajem_celotne_slike():
     """Slika vsak kos posebaj za referenco"""
@@ -236,7 +253,8 @@ def generiranje_rotacije_slik(folder: str):
         if filename.endswith("_0.png"):
             file_path = os.path.join(folder, filename) 
             img = cv2.imread(file_path)
-            idx = filename.split("_0")[0] # TUKI JE PROBLEM!
+            idx = filename.split("_0")[0] # TUKI JE PROBLEM! - kje je problem?
+        
 
             rotations = {
                 "-90": rotate(img, 90), #kompenzacija ker -90 ni ccw ampak cw

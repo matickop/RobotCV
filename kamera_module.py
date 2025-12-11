@@ -43,7 +43,7 @@ class MyCamera:
                 continue
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             self.image_cache[fname] = gray
-        print(f"[INFO] Prednaloženih {len(self.image_cache)} slik v RAM.")
+        print(f"[INFO] Prednaloženih {len(self.image_cache)} slik.")
 
     def capture_image(self, filename: str = "zajeta_slika.png", timeout_ms: int = 20000) -> str:
         """
@@ -62,6 +62,7 @@ class MyCamera:
                     img.Release()
                     result.Release()
                     self.template_path = save_path
+                    print(f"[INFO] Slika zajeta in shranjena v: {save_path}")
                     return save_path
                 else:
                     print("ITERACIJA")
