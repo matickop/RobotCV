@@ -28,7 +28,7 @@ This system combines computer vision and robotic control to automate pick-and-pl
 - **Robot**: Universal Robots UR3/UR5/UR10
 - **Gripper**: Robotiq Hand-E (or compatible 2-finger gripper)
 - **Camera**: Basler industrial camera (acA1920-40gm or similar)
-- **Network**: Ethernet connection to robot controller (static IP recommended)
+- **Network**: Ethernet connection to robot controller and Basler camera (static IP recommended)
 - **Computer**: Linux (Fedora/Ubuntu) or Windows with Python 3.11+
 
 ---
@@ -39,7 +39,7 @@ This system combines computer vision and robotic control to automate pick-and-pl
 
 - Python 3.11 or higher
 - Linux (tested on Fedora 41) or Windows 10/11
-- Connection with robot and camera(on the same switch) via TCP/IP
+- Connection with robot and camera via TCP/IP
 - Camera drivers (Pypylon for Basler cameras)
 
 ### Setup
@@ -107,7 +107,7 @@ python GUI.py
 python main.py
 ```
 
-### 4. Basic Pick-and-Place Workflow
+### 3. Basic Pick-and-Place Workflow
 
 1. **Initialize System**: Launch GUI, verify robot an
 
