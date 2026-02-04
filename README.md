@@ -39,7 +39,7 @@ This system combines computer vision and robotic control to automate pick-and-pl
 
 - Python 3.11 or higher
 - Linux (tested on Fedora 41) or Windows 10/11
-- Network access to robot controller
+- Connection with robot and camera(on the same switch) via TCP/IP
 - Camera drivers (Pypylon for Basler cameras)
 
 ### Setup
@@ -96,23 +96,8 @@ Verify RTDE interface is enabled:
 - Robot Teach Pendant → Settings → System → RTDE
 - Enable Real-Time Data Exchange
 
-### 2. Camera Calibration
 
-```bash
-# Activate virtual environment
-source .venv/bin/activate  # Linux
-# .venv\Scripts\activate   # Windows
-
-# Run camera calibration
-python kamera_module.py
-
-# Follow on-screen instructions:
-# - Position calibration target in robot workspace
-# - Capture images from multiple angles
-# - Verify calibration accuracy
-```
-
-### 3. Run Application
+### 2. Run Application
 
 ```bash
 # GUI mode (recommended)
@@ -120,9 +105,6 @@ python GUI.py
 
 # Headless mode
 python main.py
-
-# Test mode (no robot connection)
-python test_main.py
 ```
 
 ### 4. Basic Pick-and-Place Workflow
