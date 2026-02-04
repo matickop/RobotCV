@@ -24,6 +24,7 @@ build/
 # Captured images
 zajeti/
 sestavljanka_template_matching/
+zajeta_celotna_slika/
 
 # Data files
 *.npy
