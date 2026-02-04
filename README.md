@@ -109,5 +109,6 @@ python main.py
 
 ### 3. Basic Pick-and-Place Workflow
 
-1. **Initialize System**: Launch GUI, verify robot an
+1. **Initialize System**: Launch GUI  
+2. **Start main loop**: Click `Celoten loop`
 
