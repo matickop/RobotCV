@@ -20,6 +20,11 @@ class MyRobot:
         #WATCHDOG PARAM
         #self.watchdog_flag = threading.Event()
         #self.watchdog_thread = None
+        
+        #mapa za mrezo
+        self.mreze_dir = "mreze"
+        if not os.path.exists(self.mreze_dir):
+            os.makedirs(self.mreze_dir)
 
         #RTDE connectionP
         self.rtde_c = rtde_control.RTDEControlInterface(host, self.rob_freq)
@@ -83,7 +88,7 @@ class MyRobot:
 
         # ostali parametri
         self.kamera_y = 0.1
-        self.safe_z = 0.05
+        self.safe_z = 0.08
         self.work_z = 0.0112
         self.drop_z = 0.0152
         self.kamera_z = 0.0295
@@ -130,8 +135,8 @@ class MyRobot:
         suffixes = ["safe", "work", "kam", "kam_safe", "drop"]
         for suf in suffixes:
             try:
-                pose = np.load(f"mreza_paleta{ime}_{suf}.npy")
-                joints = np.load(f"mreza_paleta{ime}_{suf}_joint.npy")
+                pose = np.load(f"{self.mreze_dir}/mreza_paleta{ime}_{suf}.npy")
+                joints = np.load(f"{self.mreze_dir}/mreza_paleta{ime}_{suf}_joint.npy")
             except FileNotFoundError:
                 pose, joints = None, None
             # nastavi atribute, npr. self.paleta1_safe, self.paleta1_safe_joint
@@ -305,17 +310,16 @@ class MyRobot:
         drop_joint = self.pretvori_v_joint_mreze(drop)
 
         # shrani
-        np.save(f"mreza_{ime}_safe.npy", safe)
-        np.save(f"mreza_{ime}_work.npy", work)
-        np.save(f"mreza_{ime}_kam.npy", kam)
-        np.save(f"mreza_{ime}_kam_safe.npy", kam_safe)
-        np.save(f"mreza_{ime}_drop.npy", drop)
-
-        np.save(f"mreza_{ime}_safe_joint.npy", safe_joint)
-        np.save(f"mreza_{ime}_work_joint.npy", work_joint)
-        np.save(f"mreza_{ime}_kam_joint.npy", kam_joint)
-        np.save(f"mreza_{ime}_kam_safe_joint.npy", kam_safe_joint)
-        np.save(f"mreza_{ime}_drop_joint.npy", drop_joint)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_safe.npy", safe)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_work.npy", work)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_kam.npy", kam)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_kam_safe.npy", kam_safe)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_drop.npy", drop)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_safe_joint.npy", safe_joint)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_work_joint.npy", work_joint)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_kam_joint.npy", kam_joint)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_kam_safe_joint.npy", kam_safe_joint)
+        np.save(f"{self.mreze_dir}/mreza_{ime}_drop_joint.npy", drop_joint)
 
         return safe, work, kam, kam_safe, drop, safe_joint, work_joint, kam_joint, kam_safe_joint, drop_joint
 

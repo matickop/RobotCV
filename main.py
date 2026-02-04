@@ -119,7 +119,7 @@ def pobiranje_s_kamero():
                 continue
 
             #Gre nad koscek, katerege je zajel s kamero(ce je koscke bil prepoznan)
-            if flat_map[idx] is not None:
+            if np.all(flat_map[idx] != None):
                 # 3) Pick iz palete 2 - rotiranje 
                 target_safe = robot.rtde_c.getInverseKinematics(robot.pomik_rotacija(robot.paleta2_safe[i, j], kot)[0], robot.home_p)
                 target_work = robot.rtde_c.getInverseKinematics(robot.pomik_rotacija(robot.paleta2_work[i, j], kot)[0], robot.home_p)
@@ -158,8 +158,14 @@ def pobiranje_s_kamero():
                 #ko polozi sliko, se v matriki pozicij namesto indeksov appenda None
                 flat_map[idx] = None
                 np.save("flat_map.npy", flat_map)
-            else:
-                print("Slike ni mogoce postaviti na zapolnjeno mesto")
+            elif np.all(flat_map[idx] == None):
+                print(f"[INFO] Pozicija {idx} je že zapolnjena, nadaljujem...")
+                path = [
+                    list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.2, 0.8, 0.0]
+                ]
+                robot.rtde_c.moveJ(path)
+                print(f"[INFO] Premikam se nad sliko - varna pozicija")
+
                 
     if not np.all(flat_map==None):
         print(f"[INFO] Pobiranje končano, vsi koščki niso pobrani, kljub temu so vsi v flat_map-u nastavljeni na None.")
