@@ -23,6 +23,7 @@ build/
 
 # Captured images
 zajeti/
+sestavljanka_template_matching/
 
 # Data files
 *.npy
@@ -35,6 +36,7 @@ Template_CSV_datoteke/
 # VSCode
 .vscode/
 *.code-workspace
+examples/
 
 # PyCharm
 .idea/
