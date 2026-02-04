@@ -1,6 +1,57 @@
-venv*/
-.venv*/
-*.pyc
+# Venv
+.venv/
+venv/
+env/
+ENV/
+Lib/
+Scripts/
+Include/
+share/
+pyvenv.cfg
+
+# Python cache
 __pycache__/
-test_*.py
-*_test.py
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# Captured images
+zajeti/
+
+# Data files
+*.npy
+*.csv
+Template_CSV_datoteke/
+
+# Logs
+*.log
+
+# VSCode
+.vscode/
+*.code-workspace
+
+# PyCharm
+.idea/
+
+# Vim
+*.swp
+*.swo
+*~
+
+# Windows
+Thumbs.db
+Desktop.ini
+
+# Linux
+.directory
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
