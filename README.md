@@ -1,124 +1,131 @@
-# RTDE client library - Python
-Library implements API for Universal Robots RTDE realtime interface.
+# RobotCV - Vision-Guided Robot Pick and Place System
 
-Full RTDE description is available on [Universal Robots documentation site](https://docs.universal-robots.com/tutorials/communication-protocol-tutorials/rtde-guide.html)
-# Project structure
-## rtde
-RTDE core library
+Computer vision system for Universal Robots enabling automated object detection, localization, and pick-and-place operations using real-time image processing and RTDE control interface.
 
-- rtde.py:
-RTDE connection management object
+**Key Features:**
+- Real-time vision processing with industrial cameras (Basler/Pypylon)
+- RTDE-based robot control for UR3/UR5/UR10
+- Socket-based Robotiq gripper integration
+- Motion monitoring and safety features
+- Adaptive grasping with vision feedback
 
-- rtde_config.py:
-XML configuration files parser
+---
 
-- csv_writer.py, csv_reader.py: 
-read and write rtde data objects to text csv files
+## Project Overview
 
-## examples
-- record.py - example of recording realtime data from selected channels.
-- example_control_loop.py - example for controlling robot motion. Program moves robot between 2 setpoints.
-Copy rtde_control_loop.urp to the robot. Start python script before starting program.
-- example_plotting.py - example for using csv_reader, and plotting selected data.
+This system combines computer vision and robotic control to automate pick-and-place tasks:
 
-### Running examples
-It's recommended to run examples in [virtual environment](https://docs.python.org/3/library/venv.html) or [devcontainer](#using-devcontainer).
-```bash
-# Example for recording realtime data from the robot
-# NOTE: RTDE interface has to be enabled in the robot security settings
-cd examples
-python record.py -h
-python record.py --host 192.168.0.1 --frequency 10
-```
-# Using robot simulator in a Docker
-RTDE can connect from host system or [devcontainer](#using-devcontainer) to controller running in a Docker
-when RTDE port 30004 is forwarded.
-```bash
-# 1. Get latest ursim docker image
-docker pull universalrobots/ursim_e-series
-# 2. Run docker container: 
-docker run --rm -dit -p 30004:30004 -p 5900:5900 -p 6080:6080 universalrobots/ursim_e-series
-# 3. open vnc client in browser, and confirm safety: http://localhost:6080/vnc.html?host=docker_ip&port=6080
-```
+1. **Vision Module** (`kamera_module.py`) - Camera calibration, object detection, pose estimation
+2. **Robot Control** (`robot_module.py`) - RTDE interface, inverse kinematics, motion planning
+3. **Gripper Control** (`robotiq_gripper.py`) - Socket-based communication with Robotiq Hand-E
+4. **Motion Monitoring** (`motion_monitor_module.py`) - Real-time safety monitoring
+5. **GUI** (`GUI.py`) - User interface for operation and configuration
 
-More information about ursim docker image is available on [Dockerhub](https://hub.docker.com/r/universalrobots/ursim_e-series)
+---
 
-# Using robot simulator in VirtualBox
-RTDE can connect from host system to controller running in VirtualBox
-when RTDE port 30004 is forwarded.
-1. Download simulator from [Universal Robots support site](https://www.universal-robots.com/support/)
-2. Run simulator in VirtualBox
-3. Open menu Devices->Network Settings
-4. Open Advanced settings for NAT
-5. Open Port Forwarding
-6. Add new rule, setting host, and guest ports to 30004. 
-Leave host, and guest IP fields blank.
+## Hardware Requirements
 
-# Using rtde library
-Importing locally into project and install
-```bash
-git clone https://github.com/UniversalRobots/RTDE_Python_Client_Library
-pip install RTDE_Python_Client_Library
-```
-Install latest github commit
-```bash
-pip install git+https://github.com/UniversalRobots/RTDE_Python_Client_Library.git@main
-```
-Use [pre-built package](https://github.com/UniversalRobots/RTDE_Python_Client_Library/releases) from github
-```bash
-pip install git+https://github.com/UniversalRobots/RTDE_Python_Client_Library.git@<version-tag> # vX.X.X
-```
+- **Robot**: Universal Robots UR3/UR5/UR10
+- **Gripper**: Robotiq Hand-E (or compatible 2-finger gripper)
+- **Camera**: Basler industrial camera (acA1920-40gm or similar)
+- **Network**: Ethernet connection to robot controller (static IP recommended)
+- **Computer**: Linux (Fedora/Ubuntu) or Windows with Python 3.11+
 
-Library is compatible with Python 2.7+ and Python 3.6+
+---
 
-# Build release package
-```bash
-mvn package
-```
-## Using pre-built package with virtual environment
-Create virtual environment, and install wheel package
+## Installation
 
-### Linux & MacOS
-```bash
-python -m venv venv
-source venv/bin/activate
-pip install wheel
-# Install pre-built rtde package
-pip install target/rtde-<version>-release.zip
-```
+### Prerequisites
 
-### Windows PowerShell
-If Python3 is not installed, then just run python3 from powershell. Microsoft store will launch the installation.
+- Python 3.11 or higher
+- Linux (tested on Fedora 41) or Windows 10/11
+- Network access to robot controller
+- Camera drivers (Pypylon for Basler cameras)
 
-Permission to run scripts in console is needed to activate virtual envrionment.
-```PowerShell
-set-executionpolicy -Scope CurrentUser -ExecutionPolicy Unrestricted
-python -m venv venv
-venv/Scripts/Activate.ps1
-pip install wheel
-# Install pre-built rtde package
-pip install target/rtde-<version>-release.zip
-```
+### Setup
 
-## Using devcontainer
-Open project in VSCode and select to "reopen in devcontainer".
-Execute build command from terminal
-
-Running record.py against simulator:
-```bash
-# first start simulator exposing RTDE port 30004
-# docker run --rm -dit -p 30004:30004 -p 5900:5900 -p 6080:6080 universalrobots/ursim_e-series
-
-# in devcontainer terminal type
-cd examples
-./record.py --host controller --frequency 10 --verbose
-```
-
-# Contributor guidelines
-Code is formatted with [black](https://github.com/psf/black).
-Run code formatter before submitting pull request.
+#### Linux (Fedora/Ubuntu)
 
 ```bash
-# open project in devcontainer
-python -m black .
+# Clone repository
+git clone git@github.com:matickop/RobotCV.git
+cd RobotCV
+
+# Create virtual environment
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Verify installation
+python -c "import cv2, numpy, rtde_control; print('Dependencies OK')"
 ```
+
+#### Windows
+
+```powershell
+# Clone repository
+git clone git@github.com:matickop/RobotCV.git
+cd RobotCV
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Verify installation
+python -c "import cv2, numpy, rtde_control; print('Dependencies OK')"
+```
+
+---
+
+## Quick Start
+
+### 1. Network Configuration
+
+Configure robot IP address in `main.py`:
+
+```python
+ROBOT_IP = "192.168.1.100"  # Replace with your robot's IP
+```
+
+Verify RTDE interface is enabled:
+- Robot Teach Pendant → Settings → System → RTDE
+- Enable Real-Time Data Exchange
+
+### 2. Camera Calibration
+
+```bash
+# Activate virtual environment
+source .venv/bin/activate  # Linux
+# .venv\Scripts\activate   # Windows
+
+# Run camera calibration
+python kamera_module.py
+
+# Follow on-screen instructions:
+# - Position calibration target in robot workspace
+# - Capture images from multiple angles
+# - Verify calibration accuracy
+```
+
+### 3. Run Application
+
+```bash
+# GUI mode (recommended)
+python GUI.py
+
+# Headless mode
+python main.py
+
+# Test mode (no robot connection)
+python test_main.py
+```
+
+### 4. Basic Pick-and-Place Workflow
+
+1. **Initialize System**: Launch GUI, verify robot an
+
