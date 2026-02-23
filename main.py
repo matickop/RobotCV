@@ -20,7 +20,7 @@ def shuffling_kosckov():
         flat_map = np.load("flat_map.npy", allow_pickle=True)
         flat2d = np.full((4,6), None, dtype=object)
         if np.all(flat_map==None):
-            print(f"[INFO] Vsi koščki so pobrani, začenjam shufflanje...")
+            print("[INFO] Vsi koščki so pobrani, začenjam shufflanje...")
             random_safe, random_drop = robot.generiraj_random_joint_mreze(robot.paleta2_safe, robot.paleta2_drop)
             robot.homing()
             print("homing")

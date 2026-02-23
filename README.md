@@ -4,7 +4,7 @@ Computer vision system for Universal Robots enabling automated object detection,
 
 **Key Features:**
 - Real-time vision processing with industrial cameras (Basler/Pypylon)
-- RTDE-based robot control for UR3/UR5/UR10
+- RTDE-based robot control for UR16e
 - Socket-based Robotiq gripper integration
 - Motion monitoring and safety features
 - Adaptive grasping with vision feedback
@@ -18,16 +18,16 @@ This system combines computer vision and robotic control to automate pick-and-pl
 1. **Vision Module** (`kamera_module.py`) - Camera calibration, object detection, pose estimation
 2. **Robot Control** (`robot_module.py`) - RTDE interface, inverse kinematics, motion planning
 3. **Gripper Control** (`robotiq_gripper.py`) - Socket-based communication with Robotiq Hand-E
-4. **Motion Monitoring** (`motion_monitor_module.py`) - Real-time safety monitoring
-5. **GUI** (`GUI.py`) - User interface for operation and configuration
+4. **GUI** (`GUI.py`) - User interface for operation and configuration
+5. **Main program** (`main.py`) - Program for operating the robot
 
 ---
 
 ## Hardware Requirements
 
-- **Robot**: Universal Robots UR3/UR5/UR10
-- **Gripper**: Robotiq Hand-E (or compatible 2-finger gripper)
-- **Camera**: Basler industrial camera (acA1920-40gm or similar)
+- **Robot**: Universal Robots UR16e
+- **Gripper**: Robotiq Gripper 2F-140
+- **Camera**: Basler industrial camera via GigE
 - **Network**: Ethernet connection to robot controller and Basler camera (static IP recommended)
 - **Computer**: Linux (Fedora/Ubuntu) or Windows with Python 3.11+
 
