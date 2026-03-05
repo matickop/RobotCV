@@ -10,16 +10,12 @@ import robotiq_gripper
 from scipy.spatial.transform import Rotation as R
 import time
 import threading
-from motion_monitor_module import MotionMonitor
 
 
 class MyRobot:
     def __init__(self, host):
         #ROBOT PARAM:
         self.rob_freq = 500.0
-        #WATCHDOG PARAM
-        #self.watchdog_flag = threading.Event()
-        #self.watchdog_thread = None
         
         #mapa za mrezo
         self.mreze_dir = "mreze"
@@ -33,32 +29,19 @@ class MyRobot:
         self.dash = dashboard_client.DashboardClient(host, 29999)
         self.dash.connect(2000)
         print("[INFO] Povezava z robotom uspešna")
-        ##REUPLOAD SCRIPTS - CLEAR PROTECTIVE STOP
-        #self.rtde_c.reuploadScript()
-
-        #Start monitoringa-
-        self.monitor = MotionMonitor(self)
-        self.motion_active = False
-        self.current_target_q = None
-
-        #START WATCHDOG
-        #self.rtde_c.setWatchdog(10.0) # 10 --> 10Hz --> 0.1s
-        #self.watchdog_thread = threading.Thread(target=self.watchdog_kicker, daemon=True)
-        #self.watchdog_thread.start()
-        #print(f"[INFO] Watchdog nastavljen na 10Hz")
 
         # gripper connection
         self.gripper = robotiq_gripper.RobotiqGripper()
         self.gripper.connect(host, 63352)
         print(f"[INFO] Robotiq gripper povezan na {host}:63352")
 
-        # parametri hitrosti
+        # parametri hitrosti - basic, za testiranje, v kodi so potem povsod sami podani
         self.acc = 0.2
         self.accq = 0.4
         self.vel = 0.4
         self.velq = 0.6
 
-        # home position
+        # home position - v radianih, za vsak joint posebaj
         self.home_p = [ math.radians(-90),
                         math.radians(-90),
                         math.radians(-90),
@@ -67,19 +50,22 @@ class MyRobot:
                         math.radians(0)]
         
         # HOMING
-        print(f"[INFO] Inicializacija hominga")
+        print("[INFO] Inicializacija hominga")
         self.homing()
         self.ensure_home(max_attempts=3, tol=0.05)
-        print(f"[INFO] Homing zaključen")
+        print("[INFO] Homing zaključen")
+
         # GRIPPER AKTIVIRAN
-        print(f"[INFO] Aktivacija gripperja")
+        print("[INFO] Aktivacija gripperja")
         self.gripper.activate()
         self.gripper_close()
+
         # generacija mrez
         self._load_paleta(1) #atributi se shranijo v 3 palete glede na z offset, vse so pretvorjene v joint space:    
                             # paleta1_safe/_joint, paleta1_work/_joint, paleta1_kam/joint 
         self._load_paleta(2)# isto sam da so paleta2_xsdasdsad
-        print(f"[INFO] Mreže naložene")
+        print("[INFO] Mreže naložene")
+
         # loadanje kotov
         if os.path.exists("koti.npy"):
             self.pobrani_koti = np.load("koti.npy", allow_pickle=True).tolist()
@@ -100,23 +86,6 @@ class MyRobot:
         self.tcp_rotation_paleta2 = None 
         self.rtde_c.setPayload(self.payload_mass, self.cog)
 
-    # def watchdog_kicker(self):
-    #     varnostni_faktor = 0.01 # 10ms
-    #     perioda = 0.1
-    #     ciljni_cas = perioda - varnostni_faktor
-    #     while not self.watchdog_flag.is_set():
-    #         start_time = time.monotonic()
-    #         try:
-    #             self.rtde_c.kickWatchdog()
-    #         except rtde_control.RTDEException as e:
-    #             print(f"[ERROR] Napaka WATCHDOG - prekinjena povezava z robotom: {e}")
-    #             break
-    #         elapsed = time.monotonic() - start_time
-    #         sleep_time = ciljni_cas - elapsed
-    #         if sleep_time > 0:
-    #             sleep_time -= varnostni_faktor
-    #             time.sleep(sleep_time)
-
     def reconnect(self, host="192.168.3.102"):
         try:
             self.rtde_c.reconnect()
@@ -124,7 +93,7 @@ class MyRobot:
             self.rtde_io.reconnect()
             self.dash.connect(2000)
             self.rtde_c.setPayload(self.payload_mass, self.cog)
-            print(f"[INFO] RTDE Services reconnceted")
+            print("[INFO] RTDE Services reconnceted")
 
         except Exception as e:
             print(f"Reconnect failed {e}")
@@ -145,9 +114,9 @@ class MyRobot:
 
 
     def homing(self):
-        print(f"[INFO] Izvajam homing...")  
+        print("[INFO] Izvajam homing...")  
         self.rtde_c.moveJ(self.home_p, self.accq, self.velq)
-        print(f"[INFO] Homing zaključen.")
+        print("[INFO] Homing zaključen.")
 
     def initialize(self):
         self.homing()
@@ -208,7 +177,7 @@ class MyRobot:
             # Če bi bila paleta ravna, bi bil dx = 0.
             kot_odklona = np.arctan2(dx, dy) 
             
-            print(f"--- DIAGNOSTIKA PALETE 2 ---")
+            print("--- DIAGNOSTIKA PALETE 2 ---")
             print(f"Odmik X na dolžini 34cm: {dx*1000:.2f} mm")
             print(f"Izračunan kot rotacije: {np.degrees(kot_odklona):.3f}°")
             
@@ -225,7 +194,6 @@ class MyRobot:
             
             self.tcp_rotation_paleta2 = final_rot
         else:
-            # Za Paleto 1 pustimo originalno, ker praviš da dela
             self.tcp_rotation_paleta1 = base_rot
 
         # --- 2. OFFSETI ---
@@ -300,8 +268,10 @@ class MyRobot:
         return position, R_new.as_rotvec()
     
     def pripravi_in_shrani_paleto(self, ime, koti, oznaka, a=4, b=6):
-        # generiranje mrež (pose)
+
+        # generiranje mrež (pose)z
         safe, work, kam, kam_safe, drop = self.generiranje_mreze(a, b, koti, oznaka)
+
         # pretvorba v joint
         safe_joint  = self.pretvori_v_joint_mreze(safe)
         work_joint  = self.pretvori_v_joint_mreze(work)
@@ -328,6 +298,7 @@ class MyRobot:
         """
         Pretvori mrežo TCP pozicij v mrežo joint konfiguracij.
         """
+
         mreza_joint = np.zeros_like(mreza_pose)
         q_seed = self.home_p
 
@@ -338,27 +309,12 @@ class MyRobot:
 
         return mreza_joint 
 
-    # def pick_wrist6_candidate(self, q6_target, q6_current, limit_deg=180, alpha=0.002):
-    #     # Evaluate q6_target + k*2π for k in {-1, 0, +1}
-    #     candidates = [q6_target + k*2*np.pi for k in (-1, 0, 1)]
-    #     def cost(q6):
-    #         dist = abs(q6 - q6_current)
-    #         # penalize proximity to soft limits (±limit_deg)
-    #         q6_deg = np.degrees(q6)
-    #         proximity = max(0.0, abs(q6_deg) - (limit_deg - 20))  # start penalizing near the edge
-    #         return dist + alpha * proximity
-    #     # choose the candidate with minimum cost, but discard those beyond hard limit
-    #     hard_limit_deg = 250
-    #     feasible = [c for c in candidates if abs(np.degrees(c)) <= hard_limit_deg]
-    #     if not feasible:
-    #         feasible = candidates
-    #     return min(feasible, key=cost)
-
     def generiraj_random_joint_mreze(self, safe_tcp, work_tcp):
         """
         Sprejme dve obstoječi joint mreži (safe in work) in vrne
         naključno premešani mreži, kjer ima vsaka točka še random rotacijo q6.
         """
+
         a, b, _ = safe_tcp.shape
         n = a * b
 
@@ -374,7 +330,6 @@ class MyRobot:
         # možne rotacije okoli zapestja
         # rotations = [-np.pi/2, 0.0, np.pi/2, np.pi]
         rotations = [-90, 0, 90, 180]  # v stopinjah
-
         for i in range(n):
             ang = np.random.choice(rotations)
             flat_safe[i], _ = self.pomik_rotacija(flat_safe[i], ang)
@@ -416,58 +371,11 @@ class MyRobot:
         self.current_target_q = position
         return True
 
-    def abort_motion(self):
-        try:
-            self.rtde_c.stopScript()
-        except Exception as e:
-            print(f"[WARN] stopScript exception: {e}")
-        self.motion_active = False
-        self.current_target_q = None
-        self.monitor.stop()
-
-    def wait_until_done(self, tol=0.01, timeout=30):
-        start = time.time()
-        while time.time() - start < timeout:
-            if not self.motion_active:
-                return self.monitor.finished_ok()
-            if not self.rtde_c.isProgramRunning():
-                actual = self.rtde_r.getActualQ()
-                ok = np.all(np.abs(np.array(actual) - np.array(self.current_target_q)) < tol)
-                self.motion_active = False
-                self.current_target_q = None
-                return ok
-            time.sleep(0.05)
-        print("[ERROR] Timeout")
-        self.abort_motion()
-        return False
-
-    def pick_and_place_position(self, position): # S to pozicijo se koscek pobere in odlozi
-        position[2] = self.work_z
-        q_position = self.rtde_c.getInverseKinematics(position)
-        self.rtde_c.moveJ(q_position, self.acc, self.vel)
-
-    def move_to_kamera_position(self, position): # Pozicija kamera glede z offsetom v x(in y) in zadostna visina
-        position[1] = position[1] + self.kamera_y
-        position[2] = self.kamera_z
-        q_position = self.rtde_c.getInverseKinematics(position)
-        self.rtde_c.moveJ(q_position, self.accq, self.velq)
-
     def gripper_open(self):
         self.gripper.move_and_wait_for_pos(209, speed=255, force=120)
 
     def gripper_close(self):
         self.gripper.move_and_wait_for_pos(229, speed=255, force=120)
-
-    def move_with_blend(self, positions, acc=1.2, vel=0.5, blend=0.01):
-        """
-        Izvede zaporedje joint pozicij z blendingom.
-        positions: seznam joint vektorjev (brez gripperja!)
-        """
-        path = []
-        for q in positions:
-            q = q.tolist() if hasattr(q, "tolist") else list(q)
-            path.append(q + [acc, vel, blend])
-        self.rtde_c.moveJ(path)  
 
     def ring_ON(self):
         self.rtde_io.setStandardDigitalOut(0, True)
@@ -484,7 +392,7 @@ class MyRobot:
         self.freedrive_active = False
 
     def disconnect(self):
-        print(f"[INFO] Prekinjam povezavo z robotom in kamero")
+        print("[INFO] Prekinjam povezavo z robotom in kamero")
 
         try:
             self.rtde_c.disconnect()
@@ -514,10 +422,9 @@ class MyRobot:
     
     def unlock_protective_stop(self):
         """Protective stop se unlocka"""
-        host = "192.168.3.102"
         try:
             self.dash.unlockProtectiveStop()
-            print(f"[INFO] Protective stop cleared, reconnecting to RTDE...")
+            print("[INFO] Protective stop cleared, reconnecting to RTDE...")
             time.sleep(5)
             try:
                 self.rtde_c.reconnect()
@@ -525,7 +432,7 @@ class MyRobot:
                 self.rtde_io.reconnect()
                 time.sleep(5)
                 self.rtde_c.reuploadScript()
-                print(f"[INFO] Successfully connected to RTDE")
+                print("[INFO] Successfully connected to RTDE")
             except Exception as e:
                 print(f"[ERROR] Prišlo je do napake pri reconnectanju: {e}")
             
@@ -547,5 +454,5 @@ class MyRobot:
         except Exception as e:
             print(f"[ERROR] Prišlo je do napake disconnectanja: {e}")
 
-        print(f"[WARN] PROTECTIVE STOP: Povezava z RTDE prekinjena, počisti protective stop")
+        print("[WARN] PROTECTIVE STOP: Povezava z RTDE prekinjena, počisti protective stop")
         
