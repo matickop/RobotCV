@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 import os
 import cv2
 import numpy as np
@@ -32,10 +33,10 @@ class MyCamera:
         self.search_dir = "zajeta_celotna_slika"
 
         self.image_cache = {}
-        self.preload_images()
+        self.preload_images_multiscale()
     # ----------------------------------------------------------------------
     def preload_images(self):
-        """Naloži vse slike iz search_dir v RAM enkrat za vselej."""
+        """Prednaloži slike v self.image_cache"""
         for fname in os.listdir(self.search_dir):
             fpath = os.path.join(self.search_dir, fname)
             img = cv2.imread(fpath)
@@ -44,6 +45,23 @@ class MyCamera:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             self.image_cache[fname] = gray
         print(f"[INFO] Prednaloženih {len(self.image_cache)} slik.")
+
+    def preload_images_multiscale(self):
+        """Naloži slike v več resolucijah"""
+        for fname in os.listdir(self.search_dir):
+            fpath = os.path.join(self.search_dir, fname)
+            img = cv2.imread(fpath)
+            if img is None:
+                continue
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        
+            # Kreiraj image pyramid (različne resolucije)
+            self.image_cache[fname] = {
+                'full': gray,
+                'half': cv2.resize(gray, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA),
+                'quarter': cv2.resize(gray, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
+            }
+        print(f"[INFO] Prednaloženih {len(self.image_cache)} slik (multi-scale pyramid).")
 
     def capture_image(self, filename: str = "zajeta_slika.png", timeout_ms: int = 20000) -> str:
         """
@@ -74,7 +92,7 @@ class MyCamera:
             raise
     # ----------------------------------------------------------------------
 
-    def template_match(self, template_path: str,
+    def template_match(self,
                        method=cv2.TM_SQDIFF_NORMED, show: bool = True):
         """
         Poišče najboljše ujemanje med template_path in vsemi slikami v search_dir.
@@ -82,7 +100,7 @@ class MyCamera:
         """
         template = cv2.imread(self.template_path)
         if template is None:
-            raise FileNotFoundError(f"Template ne obstaja: {template_path}")
+            raise FileNotFoundError(f"Template ne obstaja: {self.template_path}")
         template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
         h, w = template_gray.shape[:2]
 
@@ -90,14 +108,15 @@ class MyCamera:
         najboljsa_sestavljanka = None
         najboljsa_datoteka = None
         najboljsa_lokacija = None
-        slovar_slik = {}
+        full_scores = []
         
-        for name, img in self.image_cache.items():
+        for name, pyr in self.image_cache.items():
+            img = pyr["full"]
             if img is None:
                 continue
             res = cv2.matchTemplate(img, template_gray, method)
             min_val, max_val, min_loc, max_loc = cv2.minMaxLoc(res)
-            slovar_slik[name] = min_val
+            full_scores.append((name, min_val))
 
             if min_val <  najboljsi_score:
                 najboljsi_score = min_val
@@ -109,7 +128,7 @@ class MyCamera:
             print("Ni bilo najdenega ujemanja.")
             return None, None
         # uredimo slovar score-ov od najmansega do najvecjega
-        urejen_slovar = dict(sorted(slovar_slik.items(), key=lambda item: item[1]))
+        top_full = sorted(full_scores, key=lambda item: item[1])
         
         # Označi najboljše ujemanje
         top_left = najboljsa_lokacija
@@ -123,7 +142,68 @@ class MyCamera:
             cv2.waitKey(0)
             cv2.destroyAllWindows()
 
-        return najboljsa_datoteka, najboljsi_score, urejen_slovar
+        return najboljsa_datoteka, najboljsi_score, [], top_full[:5]
+    
+
+    def template_match_multiscale(self, 
+                              top_n: int = 10, 
+                              max_workers: int = 8,
+                              show: bool = False):
+        """
+        Multi-scale matching:
+        FAZA 1: Matching na 1/5 resoluciji
+        FAZA 2: Matching na full resoluciji
+        """
+        template = cv2.imread(self.template_path)
+        if template is None:
+            raise FileNotFoundError(f"Template ne obstaja: {self.template_path}")
+        template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+        h, w = template_gray.shape[:2]
+
+        template_quarter = cv2.resize(template_gray, None, fx=0.1, fy=0.1, 
+                                    interpolation=cv2.INTER_AREA)
+        
+        coarse_scores = []
+        
+        for name, img_pyramid in self.image_cache.items():
+            img_quarter = img_pyramid['quarter']
+            
+            # Template matching na nizki resoluciji (HITRO!)
+            res = cv2.matchTemplate(img_quarter, template_quarter, cv2.TM_SQDIFF_NORMED)
+            min_val, _, _, _ = cv2.minMaxLoc(res)
+            
+            coarse_scores.append((name, min_val))
+        
+        # Sortiraj in vzemi top N kandidatov
+        coarse_scores.sort(key=lambda x: x[1])
+        top_candidates = [name for name, score in coarse_scores[:top_n]]
+
+        najboljsi_score = float('inf')
+        najboljsa_datoteka = None
+            
+        def match_full_scale(name):
+            """Match na full resoluciji"""
+            img_full = self.image_cache[name]['full']
+            res = cv2.matchTemplate(img_full, template_gray, cv2.TM_SQDIFF_NORMED)
+            min_val, _, min_loc, _ = cv2.minMaxLoc(res)
+            return (name, min_val, min_loc)
+        
+        # Parallel matching samo na top kandidatih
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(match_full_scale, top_candidates))
+        
+        final_scores = [(name, score) for name, score, _ in results]
+        final_scores.sort(key=lambda x: x[1])
+
+        # Najdi najboljši rezultat
+        for name, score, loc in results:
+            if score < najboljsi_score:
+                najboljsi_score = score
+                najboljsa_datoteka = name
+                
+        print(f"Najboljša: {najboljsa_datoteka}, score={najboljsi_score:.6f}")
+        
+        return najboljsa_datoteka, najboljsi_score, coarse_scores[:5], final_scores[:5]
 
     # ----------------------------------------------------------------------
 
