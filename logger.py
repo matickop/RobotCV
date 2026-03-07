@@ -45,6 +45,24 @@ class Logger:
             entry["extra"] = extra
         self._write("motion", entry)
 
+    def gripper(
+            self,
+            cmd_id,
+            method,
+            status,
+            level = "INFO",
+            message = None,
+            extra = None):
+        entry = {
+            "cmd_id": cmd_id,
+            "method": method,
+            "status": status,
+            "level": level,
+            "message": message
+        }
+        if extra:
+            entry["extra"] = extra
+        self._write("gripper", entry)
 
     def camera(
             self,
