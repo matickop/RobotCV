@@ -7,12 +7,64 @@ import cv2
 import os
 import threading
 import shutil
+import logger
+import ids
+
 
 stop_event = threading.Event()
 
-cam = MyCamera()
-robot = MyRobot("192.168.3.102")  
+log = logger.Logger() # globalni logger
+cam = MyCamera(save_dir="zajeti") # objekt kamere
+robot = MyRobot("192.168.3.102") # objekt robota 
 pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
+
+# Pomožne funkcije za preverjanje zapolnjenosti, kreiranje csv datoteko...
+def koscki_pobrani():
+    """
+    Ko so vsi koščki pobrani, je datoteka "zapolnjenost_paleta1.npy" polna s None vrednostmi.
+    V primeru da niso vsi koscki pobrani, je treba najprej pobrati vse koscke, ko jih enkrat poberemo in razmečemo,
+    je datoteka polna z pozicijam, kam bo treba, po prepoznavi koscek odloziti.
+    V primeru da datoteke ni, se ustvari nova, ki je polna z None vrednostmi, kar pomeni da še ni noben koscek pobran.
+    """
+    file_name = "zapolnjenost_paleta1.npy"
+    try:
+        zapolnjenost_paleta1 = np.load((file_name), allow_pickle=True)
+        log.event("file_check", "DEBUG", f"Loaded {file_name} successfully.")
+        if np.all(zapolnjenost_paleta1 == None):
+            log.event("paleta1_polna", "INFO", "Vsi koscki so pobrani.")
+
+            return True
+        else:
+            log.event("paleta1_ni_polna", "INFO", f"Stevilo nepobranih kosckov: {np.sum(zapolnjenost_paleta1 != None)//2}")
+
+            return False
+
+    except FileNotFoundError:
+        log.event("file_not_found", "DEBUG", f"File {file_name} not found.")
+        zapolnjenost_paleta1 = np.array([[i, j] for i in range(4) for j in range(6)])
+        np.save("zapolnjenost_paleta1.npy", zapolnjenost_paleta1)
+        log.event("file_created", "DEBUG", f"File {file_name} created and initialized with positions.")
+
+        return False
+
+
+def kreiranje_csv_datoteke():
+    """
+    Kreira ime za CSV datoteko, ki se uporablja za shranjevanje rezultatov template matchinga.
+    Ime datoteke vključuje časovni žig, da se zagotovi unikatnost vsake datoteke.
+     - Če datoteka že obstaja, se ustvari nova z drugačnim časovnim žigom.
+     - Vsi dogodki, povezani s kreiranjem datoteke, se beležijo v logu.
+    """
+    os.makedirs("Template_CSV_datoteke", exist_ok=True)
+    timestr = time.strftime("%Y_%m_%d-%H_%M_%S")
+    ime = f"Template_CSV_datoteke/Template_matching_scores_{timestr}.csv"
+
+    log.event("file_created", "INFO",
+            message=f"CSV datoteka ustvarjena: {ime}")
+
+    return ime
+
+
 
 def shuffling_kosckov():
     """ 
@@ -24,58 +76,99 @@ def shuffling_kosckov():
 
     stop_event.clear()
 
-    # Najprej preverimo ali imamo flat_map.npy, če je zapolnjen da lahko sploh razmecemo koscke
-    if os.path.exists("flat_map.npy"):
-        flat_map = np.load("flat_map.npy", allow_pickle=True)
-        flat2d = np.full((4,6), None, dtype=object)
-        
-        # Ko preverimo da so vsi koscki na paleti 1, gremo v zanko, ki jih razmeče
-        if np.all(flat_map==None):
-            print("[INFO] Vsi koščki so pobrani, začenjam shufflanje...")
-            random_safe, random_drop = robot.generiraj_random_joint_mreze(robot.paleta2_safe, robot.paleta2_drop)
-            robot.homing()
-            print("homing")
+    session_cid = ids.new_id("Shuffling")
+    log.event("shuffling_start", "INFO", "Začel se je proces shufflanja kosckov iz palete 1 na paleto 2.", cmd_id=session_cid)
+
+    if not koscki_pobrani():
+        log.event("paleta1_ni_polna", "WARNING", "Shuffling se ne more začeti, ker niso vsi koscki pobrani.", cmd_id=session_cid)
+
+        return
+    
+    log.event("paleta1_prazna", "INFO",
+              message="Vsi koščki pobrani, pripravljam shuffling...",
+              cmd_id=session_cid)
+    
+    random_safe, random_drop = robot.generiraj_random_joint_mreze(
+        robot.paleta2_safe, robot.paleta2_drop)
+    rows, cols = robot.paleta2_safe_joint.shape[:2]
+    zapolnjenost_paleta1_2d = np.load("zapolnjenost_paleta1.npy", allow_pickle=True).reshape(rows, cols, 2)
+
+    cid = ids.new_id("homing")
+    log.motion(cmd_id=cid, method="homing", status="started",actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid})
+    robot.homing()
+    log.motion(cmd_id=cid, method="homing", status="completed", actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid})
+
+    cid = ids.new_id("gripper")
+    log.gripper(cmd_id=cid, method="gripper_close", status="started", level="INFO", extra={"session": session_cid})
+    robot.gripper_close()
+    log.gripper(cmd_id=cid, method="gripper_close", status="completed", level="INFO", extra={"session": session_cid})
+
+    for i in range(rows): # Začetek iteracije prestavljanja iz palete 1 na paleto 2
+        for j in range(cols):
+
+            if stop_event.is_set():
+                log.event("stop_requested", "WARNING", f"Shuffling prekinjen pri [{i},{j}] koscku", cmd_id=session_cid)
+                return
+            
+            cid = ids.new_id("moveJ")
+            path = [
+                list(robot.paleta1_safe_joint[i, j]) + [1.6, 2.1, 0.01],
+                list(robot.paleta1_work_joint[i, j]) + [0.5, 2.1, 0]
+            ] # Pod do koscka na paleti 1
+            log.motion(cmd_id=cid, method="moveJ", status="started", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_piece"})
+            robot.rtde_c.moveJ(path)
+            log.motion(cmd_id=cid, method="moveJ", status="completed", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_piece"})  
+
+            cid = ids.new_id("gripper")
+            log.gripper(cmd_id=cid, method="gripper_open", status="started", level="INFO", extra={"session": session_cid, "step": "gripper_close_piece"})
+            robot.gripper_open() 
+            log.gripper(cmd_id=cid, method="gripper_open", status="completed", level="INFO", extra={"session": session_cid, "step": "gripper_close_piece"})
+
+            cid = ids.new_id("moveJ")
+            path = [
+                list(robot.paleta1_work_joint[i, j]) + [1.6, 2.1, 0.01],
+                list(robot.paleta1_safe_joint[i, j]) + [1.6, 2.1, 0.01],
+                list(random_safe[i, j]) + [1.6, 2.1, 0.01],
+                list(random_drop[i, j]) + [1.6, 2.1, 0.0]
+            ]
+            log.motion(cmd_id=cid, method="moveJ", status="started", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_drop"})
+            robot.rtde_c.moveJ(path)
+            log.motion(cmd_id=cid, method="moveJ", status="completed", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_drop"})
+
+            cid = ids.new_id("gripper")
+            log.gripper(cmd_id=cid, method="gripper_close", status="started", level="INFO", extra={"session": session_cid, "step": "gripper_close_drop"})
             robot.gripper_close()
+            log.gripper(cmd_id=cid, method="gripper_close", status="completed", level="INFO", extra={"session": session_cid, "step": "gripper_close_drop"})
 
-            # Začetek iteracije preko palete 1, ki prestavlja(z random pozicijami) koscke na paleto 2
-            for i in range(robot.paleta2_safe_joint.shape[0]):
-                for j in range(robot.paleta2_safe_joint.shape[1]):
-                    if stop_event.is_set():
-                        print("STOP - prekinitev programa")
-                        return
-                    #pot do koscka:
-                    path = [
-                        list(robot.paleta1_safe_joint[i, j]) + [1.6, 2.1, 0.01],
-                        list(robot.paleta1_work_joint[i, j]) + [0.5, 2.1, 0]
-                    ]
-                    robot.rtde_c.moveJ(path)
-                    robot.gripper_open() 
+            cid = ids.new_id("moveJ")
+            path = [
+                list(random_drop[i,j]) + [1.6, 2.1, 0.01],
+                list(random_safe[i,j]) + [1.6, 2.1, 0.05]                
+            ]
+            log.motion(cmd_id=cid, method="moveJ", status="started", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_safe"})
+            robot.rtde_c.moveJ(path)
+            log.motion(cmd_id=cid, method="moveJ", status="completed", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_safe"})
 
-                    path = [
-                        list(robot.paleta1_work_joint[i, j]) + [1.6, 2.1, 0.01],
-                        list(robot.paleta1_safe_joint[i, j]) + [1.6, 2.1, 0.01],
-                        list(random_safe[i, j]) + [1.6, 2.1, 0.01],
-                        list(random_drop[i, j]) + [1.6, 2.1, 0.0]
-                    ]
-                    robot.rtde_c.moveJ(path)
-                    robot.gripper_close()
-                    path = [
-                        list(random_drop[i,j]) + [1.6, 2.1, 0.01],
-                        list(random_safe[i, j]) + [1.6, 2.1, 0.01]                
-                    ]
-                    robot.rtde_c.moveJ(path)
+            zapolnjenost_paleta1_2d[i,j] = [i,j]  #nastavim flat2d na i,j
+            zapolnjenost_paleta1_2d = np.array(zapolnjenost_paleta1_2d, dtype=object)
+            np.save("zapolnjenost_paleta1.npy", zapolnjenost_paleta1_2d.flatten())
+            log.event("file_saved", "INFO", f"Updated zapolnjenost_paleta1.npy after moving piece [{i},{j}]", cmd_id=session_cid)
 
-                    flat2d[i,j] = [i,j]  #nastavim flat2d na i,j
-                    np.save("flat_map.npy", flat2d.flatten())
+    log.event("shuffling_complete", "INFO", "Shuffling complete.", cmd_id=session_cid)
 
-            flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
-            flat_map = np.array(flat_map, dtype=object)
-            np.save("flat_map.npy", flat_map)
-            print("[INFO] Shuffling complete. New flat_map.npy created.")
-            robot.homing()
+    cid = ids.new_id("homing")
+    log.motion(cmd_id=cid, method="homing", status="started", actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid})
+    robot.homing()
+    log.motion(cmd_id=cid, method="homing", status="completed", actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid})
+
 
 def pobiranje_s_kamero():
+    """
+    Funkcija, ki pobira koscke s kamero. Gre nad vsak koscek na paleti 2, zajame sliko, prepozna koscek in ga pobere, če je prepoznan.
+
+    """
     stop_event.clear()
+    
     robot.homing()
     print("Homing") 
     robot.gripper.move_and_wait_for_pos(229, speed=200, force=2)
@@ -198,6 +291,7 @@ def pobiranje_s_kamero():
     #homing nazaj
     robot.homing()
 
+
 def celoten_loop():
     stop_event.clear()
     while True:
@@ -222,6 +316,7 @@ def celoten_loop():
             np.save("flat_map.npy", flat_map)
             pobiranje_s_kamero()
         time.sleep(0.5)
+
 
 def prepoznava_slik():
     """
@@ -317,6 +412,7 @@ def zajem_celotne_slike():
 
     robot.homing()
 
+
 def rotate(img, angle):
     h, w = img.shape[:2]
     center = (w // 2, h // 2)
@@ -325,6 +421,7 @@ def rotate(img, angle):
     rotated = cv2.warpAffine(img, M, (w, h))
 
     return rotated
+
 
 def generiranje_rotacije_slik(folder: str):
     for filename in os.listdir(folder):
@@ -345,6 +442,7 @@ def generiranje_rotacije_slik(folder: str):
             save_path = os.path.join(folder, new_filename)
             cv2.imwrite(save_path, rotated_img)
             print(f"saved: {save_path}")
+
 
 def fine_move_tcp(dx=0.0, dy=0.0, dz=0.0):
     tcp = robot.get_actual_tcp_pose()
