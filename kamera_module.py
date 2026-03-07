@@ -5,38 +5,61 @@ import numpy as np
 from pypylon import pylon
 from pypylon import genicam
 import time
+import ids
+import logger
+
+log = logger.Logger()
 
 
 class MyCamera:
     """
-    Modul za zajem slike s pypylon kamero in template matching.
+    Modul za zajem slik s kamero Basler in izvajanje algoritmov za prepoznavo slik.
+        - capture_image: zajame eno sliko in jo shrani
+        - template_match: poišče najboljše ujemanje med zajeto sliko in slikami v search_dir
+        - template_match_multiscale: optimizirana, hitrejsa verzija template_match-a
     """
 
     def __init__(self, save_dir: str = None, camera_index: int = 0):
         """
-        save_dir: mapa kamor se shranjujejo zajete slike
-        camera_index: (če imaš več kamer lahko spremeniš)
+        Inicializira kamero in ustvari mapo za shranjevanje slik.
         """
-        if save_dir is None:
-            save_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "zajeti")
+
+        self.init_id = ids.new_id("camera_init")
+        log.event("camera_init", "INFO", "Initializing camera.", cmd_id=self.init_id)
+
         self.save_dir = save_dir
+        log.event("camera_init", "INFO", f"Uporabljam {self.save_dir} za shranjevanje slik, v primeru da ga ni, kreiram novega.", cmd_id=self.init_id)
         os.makedirs(self.save_dir, exist_ok=True)
 
-        # Inicializacija kamere
-        tlf = pylon.TlFactory.GetInstance()
+        log.event("camera_init", "INFO", "Povezovanje z kamero...", cmd_id=self.init_id)
+        tlf = pylon.TlFactory.GetInstance() # inicializacija kamere
+        log.event("camera_init", "INFO", "Kreiram instanco cam", cmd_id=self.init_id)
         self.cam = pylon.InstantCamera(tlf.CreateFirstDevice())
+        log.event("camera_init", "INFO", "Povezava z kamero vzpostavljena.", cmd_id=self.init_id)
+        log.event("camera_init", "INFO", "Nastavljam MaxNumBuffer na 20, da se zmanjša možnost timeoutov pri zajemu slike.", cmd_id=self.init_id)
         self.cam.MaxNumBuffer = 20
         time.sleep(1)
+        log.event("camera_init", "INFO", "Zaganjam aktivno povezavo s kamero", cmd_id=self.init_id)
         self.cam.Open()
+        log.event
 
+        log.event("camera_init", "INFO", "Nastavitev template_path in search_dir", cmd_id=self.init_id)
         self.template_path = None
         self.search_dir = "zajeta_celotna_slika"
 
+        log.event("camera_init", "INFO", "Prednaložim slike v več resolucijah za hitrejše template matchanje.", cmd_id=self.init_id)
         self.image_cache = {}
         self.preload_images_multiscale()
+        log.event("camera_init", "INFO", "Inicializacija kamere zaključena.", cmd_id=self.init_id)
+
     # ----------------------------------------------------------------------
     def preload_images(self):
-        """Prednaloži slike v self.image_cache"""
+        """
+        Prednaloži slike v self.image_cache
+        """
+
+        log.event("camera_init", "INFO", "Prednaložim slike v self.image_cache.", cmd_id=self.init_id)
+
         for fname in os.listdir(self.search_dir):
             fpath = os.path.join(self.search_dir, fname)
             img = cv2.imread(fpath)
@@ -44,10 +67,15 @@ class MyCamera:
                 continue
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
             self.image_cache[fname] = gray
-        print(f"[INFO] Prednaloženih {len(self.image_cache)} slik.")
+        log.event("camera_init", "INFO", f"Prednaloženih {len(self.image_cache)} slik.", cmd_id=self.init_id)
 
     def preload_images_multiscale(self):
-        """Naloži slike v več resolucijah"""
+        """
+        Naloži slike v več resolucijah
+        """
+
+        log.event("camera_init", "INFO", "Naloži slike v več resolucijah.", cmd_id=self.init_id)
+
         for fname in os.listdir(self.search_dir):
             fpath = os.path.join(self.search_dir, fname)
             img = cv2.imread(fpath)
@@ -61,13 +89,16 @@ class MyCamera:
                 'half': cv2.resize(gray, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA),
                 'quarter': cv2.resize(gray, None, fx=0.1, fy=0.1, interpolation=cv2.INTER_AREA)
             }
-        print(f"[INFO] Prednaloženih {len(self.image_cache)} slik (multi-scale pyramid).")
+
+        log.event("camera_init", "INFO", f"Prednaloženih {len(self.image_cache)} slik(multi-scale)", cmd_id=self.init_id)
+
 
     def capture_image(self, filename: str = "zajeta_slika.png", timeout_ms: int = 20000) -> str:
         """
         Zajame eno sliko in jo shrani v self.save_dir
         Vrne pot do shranjene slike.
         """
+        
         try:
             iterations = 5
             for i in range(iterations):
