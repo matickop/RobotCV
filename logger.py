@@ -66,7 +66,7 @@ class Logger:
 
     def camera(
             self,
-            cam_id,
+            cmd_id,
             method,
             status,
             level = "INFO",
@@ -74,7 +74,7 @@ class Logger:
             extra = None):
         
         entry = {
-            "cam_id": cam_id,
+            "cmd_id": cmd_id,
             "method": method,
             "status": status,
             "level": level,
