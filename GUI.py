@@ -13,7 +13,7 @@ layout = [
     [sg.Text("Robot control:")],
     [sg.Button("Reconnect", s=14), sg.B("Activate gripper"), sg.B("STOP",button_color=("white", "red"), s=14), sg.B("CLEAR STOP", s=14)],
     [sg.Button("Home", s=14), sg.Button("Shuffle kosckov", s=14), sg.Button("FreeDrive", s=14),
-        sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop")],
+        sg.B("Pobiranje koščkov s kamero"), sg.B("Zajem celotne slike"), sg.B("Celoten loop"), sg.B("Prepoznava slik")],
     [sg.B("Izhodiščna točka palete 1:1"), sg.B("Izhodiščna točka palete 1:2"), sg.B("Izhodiščna točka palete 1:3"), sg.B("Izhodiščna točka palete 1:4")],
     [sg.B("Izhodiščna točka palete 2:1"), sg.B("Izhodiščna točka palete 2:2"), sg.B("Izhodiščna točka palete 2:3"), sg.B("Izhodiščna točka palete 2:4")],
     [sg.B("X+"), sg.B("X-"), sg.B("Y+"), sg.B("Y-"), sg.B("Z+"), sg.B("Z-"), sg.B("Z-0.001"), sg.B("Kamera paleta 2"), sg.B("Info")],
@@ -157,33 +157,36 @@ while True:
     if event == "Pobiranje koščkov s kamero":
         threading.Thread(target=main.pobiranje_s_kamero, daemon=True).start()
         
+    if event == "Prepoznava slik":
+        threading.Thread(target=main.prepoznava_slik, daemon=True).start()
+
     if event == "Generacija random mreže":
         main.robot.generiranje_nakljucne_mreze(main.robot.paleta2.shape[0], main.robot.paleta2.shape[1], main.robot.paleta2)
         print(main.robot.generiranje_nakljucne_mreze(main.robot.paleta2.shape[0], main.robot.paleta2.shape[1], main.robot.paleta2))
 
     if event == "Izhodiščna točka palete 1:1":
-        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[0,0])
+        main.robot.rtde_c.moveJ(main.robot.paleta1_safe_joint[0,0])
 
     if event == "Izhodiščna točka palete 1:2":
-        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[0,5])
+        main.robot.rtde_c.moveJ(main.robot.paleta1_safe_joint[0,5])
     
     if event == "Izhodiščna točka palete 1:3":
-        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[3,0])
+        main.robot.rtde_c.moveJ(main.robot.paleta1_safe_joint[3,0])
 
     if event == "Izhodiščna točka palete 1:4":
-        main.robot.moveJ_asinh(main.robot.paleta1_safe_joint[3,5])
+        main.robot.rtde_c.moveJ(main.robot.paleta1_safe_joint[3,5])
 
     if event == "Izhodiščna točka palete 2:1":
-        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[0,0])
+        main.robot.rtde_c.moveJ(main.robot.paleta2_safe_joint[0,0])
 
     if event == "Izhodiščna točka palete 2:2":
-        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[0,5])
+        main.robot.rtde_c.moveJ(main.robot.paleta2_safe_joint[0,5])
     
     if event == "Izhodiščna točka palete 2:3":
-        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[3,0])
+        main.robot.rtde_c.moveJ(main.robot.paleta2_safe_joint[3,0])
 
     if event == "Izhodiščna točka palete 2:4":
-        main.robot.moveJ_asinh(main.robot.paleta2_safe_joint[3,5])
+        main.robot.rtde_c.moveJ(main.robot.paleta2_safe_joint[3,5])
 
     if event == "Kamera paleta 2":
         main.robot.move_to_position(main.robot.paleta2_kam_safe_joint[0,0])
