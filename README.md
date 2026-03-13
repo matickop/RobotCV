@@ -37,7 +37,7 @@ This system combines computer vision and robotic control to automate pick-and-pl
 
 ### Prerequisites
 
-- Python 3.11 or higher
+- Python 3.11.xx
 - Linux (tested on Fedora 41) or Windows 10/11
 - Connection with robot and camera via TCP/IP
 - Camera drivers (Pypylon for Basler cameras)
