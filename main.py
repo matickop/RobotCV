@@ -21,27 +21,27 @@ pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
 # Pomožne funkcije za preverjanje zapolnjenosti, kreiranje csv datoteko...
 def koscki_pobrani():
     """
-    Ko so vsi koščki pobrani, je datoteka "zapolnjenost_paleta1.npy" polna s None vrednostmi.
+    Ko so vsi koščki pobrani, je datoteka "zapolnjenost_paleta1.npy" polna s -1 vrednostmi.
     V primeru da niso vsi koscki pobrani, je treba najprej pobrati vse koscke, ko jih enkrat poberemo in razmečemo,
     je datoteka polna z pozicijam, kam bo treba, po prepoznavi koscek odloziti.
-    V primeru da datoteke ni, se ustvari nova, ki je polna z None vrednostmi, kar pomeni da še ni noben koscek pobran.
+    V primeru da datoteke ni, se ustvari nova, ki je polna z -1 vrednostmi, kar pomeni da še ni noben koscek pobran.
     """
     file_name = "zapolnjenost_paleta1.npy"
     try:
-        zapolnjenost_paleta1 = np.load((file_name), allow_pickle=True)
+        zapolnjenost_paleta1 = np.load(file_name)
         log.event("file_check", "DEBUG", f"Loaded {file_name} successfully.")
-        if np.all(zapolnjenost_paleta1 == None):
+        if np.all(zapolnjenost_paleta1 == -1):
             log.event("paleta1_polna", "INFO", "Vsi koscki so pobrani.")
 
             return True
         else:
-            log.event("paleta1_ni_polna", "INFO", f"Stevilo nepobranih kosckov: {np.sum(zapolnjenost_paleta1 != None)//2}")
+            log.event("paleta1_ni_polna", "INFO", f"Stevilo nepobranih kosckov: {np.sum(zapolnjenost_paleta1 != -1)//2}")
 
             return False
 
     except FileNotFoundError:
         log.event("file_not_found", "DEBUG", f"File {file_name} not found.")
-        zapolnjenost_paleta1 = np.array([[i, j] for i in range(4) for j in range(6)])
+        zapolnjenost_paleta1 = np.array([[i, j] for i in range(4) for j in range(6)], dtype=np.int64)
         np.save("zapolnjenost_paleta1.npy", zapolnjenost_paleta1)
         log.event("file_created", "DEBUG", f"File {file_name} created and initialized with positions.")
 
@@ -69,7 +69,7 @@ def kreiranje_csv_datoteke():
 def shuffling_kosckov():
     """ 
     Funkcija, ki razmece koscke iz palete 1 na paleto 2.
-    Za preverjanje ce so koscki na paleti je zgolj samo flat_map.npy, kateri se prazni tekom pobiranja kosckov, ce se ni vsak
+    Za preverjanje ce so koscki na paleti je zgolj samo zapolnjenost_paleta1.npy kateri se prazni tekom pobiranja kosckov, ce se ni vsak
     koscek zabelezil kot pobran, je treba najprej pobrati vse koscke. Ni nobenega preverjanja, kako so koscki orientirani,
     predpostavljam da so pravilno.
     """
@@ -90,8 +90,9 @@ def shuffling_kosckov():
     
     random_safe, random_drop = robot.generiraj_random_joint_mreze(
         robot.paleta2_safe, robot.paleta2_drop)
+    
     rows, cols = robot.paleta2_safe_joint.shape[:2]
-    zapolnjenost_paleta1_2d = np.load("zapolnjenost_paleta1.npy", allow_pickle=True).reshape(rows, cols, 2)
+    zapolnjenost_paleta1_2d = np.load("zapolnjenost_paleta1.npy").reshape(rows, cols, 2)
 
     cid = ids.new_id("homing")
     log.motion(cmd_id=cid, method="homing", status="started",actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid})
@@ -143,15 +144,15 @@ def shuffling_kosckov():
             cid = ids.new_id("moveJ")
             path = [
                 list(random_drop[i,j]) + [1.6, 2.1, 0.01],
-                list(random_safe[i,j]) + [1.6, 2.1, 0.05]                
+                list(random_safe[i,j]) + [1.6, 2.1, 0.0]                
             ]
             log.motion(cmd_id=cid, method="moveJ", status="started", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_safe"})
             robot.rtde_c.moveJ(path)
             log.motion(cmd_id=cid, method="moveJ", status="completed", target_q=path[-1], actual_q=robot.rtde_r.getActualQ(), level="INFO", extra={"session": session_cid, "step": "move_to_safe"})
 
             zapolnjenost_paleta1_2d[i,j] = [i,j]  #nastavim flat2d na i,j
-            zapolnjenost_paleta1_2d = np.array(zapolnjenost_paleta1_2d, dtype=object)
-            np.save("zapolnjenost_paleta1.npy", zapolnjenost_paleta1_2d.flatten())
+            zapolnjenost_paleta1_2d = np.array(zapolnjenost_paleta1_2d)
+            np.save("zapolnjenost_paleta1.npy", zapolnjenost_paleta1_2d.reshape(-1, 2))
             log.event("file_saved", "INFO", f"Updated zapolnjenost_paleta1.npy after moving piece [{i},{j}]", cmd_id=session_cid)
 
     log.event("shuffling_complete", "INFO", "Shuffling complete.", cmd_id=session_cid)
@@ -174,7 +175,7 @@ def pobiranje_s_kamero():
 
     if not koscki_pobrani():
         log.event("paleta1_ni_polna", "WARNING", "Vsi koscki niso pobrani ali pa datoteke ni, potrebno naloziti zapolnjenost palete 1!", cmd_id=session_cid)
-        zapolnjenost_paleta1 = np.load("zapolnjenost_paleta1.npy", allow_pickle=True)
+        zapolnjenost_paleta1 = np.load("zapolnjenost_paleta1.npy")
         log.event("file_check", "DEBUG", f"Loaded zapolnjenost_paleta1.npy: {zapolnjenost_paleta1}", cmd_id=session_cid)
 
     cid = ids.new_id("homing") # homing za začetek pobiranja s kamero
@@ -260,7 +261,7 @@ def pobiranje_s_kamero():
 
             # gre nad koscek, katerege je zajel s kamero
             cid = ids.new_id("moveJ")
-            if np.all(zapolnjenost_paleta1[idx] != None):
+            if np.all(zapolnjenost_paleta1[idx] != -1):
                 # 3) Pick iz palete 2 - rotiranje 
                 log.event("move_to_piece_position", "INFO", f"Moving to piece position for piece [{i},{j}] with index {idx} and angle {kot}", cmd_id=cid, extra={"session": session_cid})
                 target_safe = robot.rtde_c.getInverseKinematics(robot.pomik_rotacija(robot.paleta2_safe[i, j], kot)[0], robot.home_p)
@@ -315,12 +316,12 @@ def pobiranje_s_kamero():
 
                 #ko polozi sliko, se v matriki pozicij namesto indeksov appenda None
                 log.event("update_zapolnjenost_paleta1", "INFO", f"Updating zapolnjenost_paleta1 for piece with index {idx}", cmd_id=cid, extra={"session": session_cid})
-                zapolnjenost_paleta1[idx] = None
+                zapolnjenost_paleta1[idx] = -1
                 log.event("zapolnjenost_paleta1_updated", "DEBUG", f"Updated zapolnjenost_paleta1[{idx}] = {zapolnjenost_paleta1[idx]}", cmd_id=cid, extra={"session": session_cid})
                 np.save("zapolnjenost_paleta1.npy", zapolnjenost_paleta1)
                 log.event("file_saved", "INFO", f"Saved updated zapolnjenost_paleta1.npy after dropping piece with index {idx}", cmd_id=cid, extra={"session": session_cid})
 
-            elif np.all(zapolnjenost_paleta1[idx] == None):
+            elif np.all(zapolnjenost_paleta1[idx] == -1):
                 log.event("piece_already_picked", "WARNING", f"Piece with index {idx} at position [{i},{j}] has already been picked according to zapolnjenost_paleta1. Moving to safe position.", cmd_id=cid, extra={"session": session_cid})
                 path = [
                     list(map(float, robot.paleta2_kam_safe_joint[i, j])) + [1.6, 2.1, 0.005]
@@ -345,28 +346,24 @@ def pobiranje_s_kamero():
 
 
 def celoten_loop():
+    """
+    Glavna funkcija programa za nemoteno delovanje pobiranja in razmetavanja sestavljanke.
+    """
+
+    log.event("program_start", "INFO", "Program started. Entering main loop.")
     stop_event.clear()
+
     while True:
-        if os.path.exists("flat_map.npy"):
-            zasedenost = np.load("flat_map.npy", allow_le=True)
-            if stop_event.is_set():
-                print("[INFO] stopping program")
-                break
-            if np.all(zasedenost==None):
-                print("[INFO] Vsi koščki so pobrani, začenjam shufflanje...")
-                shuffling_kosckov()
-            else:
-                if stop_event.is_set():
-                    print("[INFO] stopping program")
-                    break
-                print("[INFO] Koščki so na plaleti 2, začenjam pobiranje s kamero...")
-                pobiranje_s_kamero()
+        if koscki_pobrani():
+            cid = ids.new_id("shuffling")
+            log.event("shuffling_start", "INFO", "Vsi koščki so pobrani, začenjam shufflanje...", cmd_id=cid)
+            shuffling_kosckov()
+
         else:
-            print("[INFO] Datoteka flat_map.npy ne obstaja, kreiram novo in začenjam pobiranje s kamero...")
-            flat_map = [[i, j] for i in range(robot.paleta2_kam_joint.shape[0]) for j in range(robot.paleta2_kam_joint.shape[1])]
-            flat_map = np.array(flat_map, dtype=object)
-            np.save("flat_map.npy", flat_map)
+            cid = ids.new_id("pobiranje")
+            log.event("pobiranje_start", "INFO", "Niso vsi koščki pobrani, začenjam pobiranje s kamero...", cmd_id=cid)
             pobiranje_s_kamero()
+
         time.sleep(0.5)
 
 
