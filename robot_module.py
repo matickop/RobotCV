@@ -17,7 +17,8 @@ log = logger.Logger() # globalni logger
 
 class MyRobot:
     def __init__(self, host):
-
+        
+        self.host = host
         self.init_id = ids.new_id("robot_init")
         log.event("robot_init", "INFO", f"Starting robot initialization with host {host}.", cmd_id=self.init_id)
 
@@ -32,17 +33,15 @@ class MyRobot:
         if not os.path.exists(self.mreze_dir):
             os.makedirs(self.mreze_dir)
 
-        self.rtde_c = rtde_control.RTDEControlInterface(host, self.rob_freq) # povezava na rtde control
-        self.rtde_r = rtde_receive.RTDEReceiveInterface(host) # povezava na rtde receive
-        self.rtde_io = rtde_io.RTDEIOInterface(host) # povezava na rtde io
-        self.dash = dashboard_client.DashboardClient(host, 29999) # povezava na dashboard za homing in freedrive
-        self.dash.connect(2000) # povezava na dashboard port
-        log.event("robot_init", "INFO", "Povezava z robotom uspešna", cmd_id=self.init_id)
+        self.rtde_c = None # Ustvarimo rtde_c objekt
+        self.rtde_r = None # Ustvarimo rtde_r objekt
+        self.rtde_io = None # Ustvarimo rtde_io objekt
+        self.dash = None # Ustvarimo dash objekt
+        log.event("robot_init", "INFO", "Ustvarjanje objektov za povezavo z robotom", cmd_id=self.init_id)
 
         # gripper connection
-        self.gripper = robotiq_gripper.RobotiqGripper()
-        self.gripper.connect(host, 63352)
-        log.event("robot_init", "INFO", f"Robotiq gripper povezan na {host}:63352", cmd_id=self.init_id)
+        self.gripper = None
+        log.event("robot_init", "INFO", "Ustvarjanje objekta za povezavo z gripperjem", cmd_id=self.init_id)
 
         self.acc = 0.2 # parametri hitrosti - basic, za testiranje, v kodi so potem povsod sami podani
         self.accq = 0.4
@@ -55,28 +54,13 @@ class MyRobot:
                         math.radians(-90),
                         math.radians(90),
                         math.radians(0)] # home position - v radianih, za vsak joint posebaj
-        
-        log.event("robot_init", "INFO", "Inicializacija hominga", cmd_id=self.init_id)
-        cid = ids.new_id("homing")
-        log.motion(cmd_id=cid, method="homing", status="started",target_q=self.home_p, actual_q=self.rtde_r.getActualQ(), level="INFO", extra={"initialization": self.init_id})
-        self.homing() # homing ob inicializaciji
-        self.ensure_home(max_attempts=3, tol=0.05)
-        log.motion(cmd_id=cid, method="homing", status="completed", target_q=self.home_p, actual_q=self.rtde_r.getActualQ(), level="INFO", extra={"initialization": self.init_id})
-
-        log.event("robot_init", "INFO", "Aktivacija gripperja", cmd_id=self.init_id)
-        cid = ids.new_id("gripper")
-        log.gripper(cmd_id=cid, method="gripper_activate", status="started", level="INFO", extra={"initialization": self.init_id})
-        self.gripper.activate() # aktivacija grippera
-        log.gripper(cmd_id=cid, method="gripper_activate", status="completed",message="Gripper aktiviran", level="INFO", extra={"initialization": self.init_id})
-        log.gripper(cmd_id=cid, method="gripper_close", status="started", level="INFO", extra={"initialization": self.init_id})
-        self.gripper_close()
-        log.gripper(cmd_id=cid, method="gripper_close", status="completed",message="Gripper zaprt", level="INFO", extra={"initialization": self.init_id})
 
         log.event("robot_init", "INFO", "Nalaganje mrež za palete", cmd_id=self.init_id)
         self._load_paleta(1) # atributi se shranijo v 3 palete glede na z offset, vse so pretvorjene v joint space:    
                             # paleta1_safe/_joint, paleta1_work/_joint, paleta1_kam/joint 
         self._load_paleta(2)# isto sam da so paleta2
         log.event("robot_init", "INFO", "Mreže za palete naložene", cmd_id=self.init_id)
+        print("MREZE!")
 
         log.event("robot_init", "INFO", "Nalaganje kotov.", cmd_id=self.init_id)
         if os.path.exists("koti.npy"): # nalaganje kotov, če obstajajo, sicer se inicializirajo na None (to pomeni da še niso pobrani)
@@ -99,10 +83,70 @@ class MyRobot:
         self.inital_tcp_rotation = np.array([0, 3.14, 0])
         self.tcp_rotation_paleta1 = None
         self.tcp_rotation_paleta2 = None 
-        self.rtde_c.setPayload(self.payload_mass, self.cog)
         log.event("robot_init", "INFO", "Robot initialized successfully.", cmd_id=self.init_id)
 
-    def reconnect(self, host="192.168.3.102"):
+    def connect(self) -> bool:
+        """
+        Vzpostavi vse mrežne povezave z robotom in izvede začetni homing ter aktivacijo gripperja.
+        Vrne True ob uspehu, False ob napaki (brez sesutja aplikacije).
+        """
+        log.event("robot_init", "INFO", f"Poskus povezave z robotom na {self.host}...", cmd_id=self.init_id)
+        print(f"[INFO] Povezovanje z robotom ({self.host})...")
+        
+        try:
+            # 1. Povezava na RTDE vmesnike
+            self.rtde_c = rtde_control.RTDEControlInterface(self.host, self.rob_freq)
+            self.rtde_r = rtde_receive.RTDEReceiveInterface(self.host)
+            self.rtde_io = rtde_io.RTDEIOInterface(self.host)
+            
+            # 2. Povezava na Dashboard
+            self.dash = dashboard_client.DashboardClient(self.host, 29999)
+            self.dash.connect(2000)
+            
+            # 3. Povezava na Gripper
+            self.gripper = robotiq_gripper.RobotiqGripper()
+            self.gripper.connect(self.host, 63352)
+            
+            # Če smo prišli do sem, so mrežne povezave žive
+            self.is_connected = True
+            log.event("robot_init", "INFO", "Mrežna povezava z robotom in gripperjem uspešna.", cmd_id=self.init_id)
+            print("[INFO] Vsi mrežni vmesniki robota so povezani.")
+
+            # 4. Nastavitev tovora (Payload)
+            self.rtde_c.setPayload(self.payload_mass, self.cog)
+
+            # 5. Začetni Homing (gibi se izvedejo samo, če je povezava uspela!)
+            log.event("robot_init", "INFO", "Zagon začetnega hominga.", cmd_id=self.init_id)
+            cid = ids.new_id("homing")
+            log.motion(cmd_id=cid, method="homing", status="started", target_q=self.home_p, actual_q=self.rtde_r.getActualQ(), level="INFO")
+            self.homing()
+            self.ensure_home(max_attempts=3, tol=0.05)
+            log.motion(cmd_id=cid, method="homing", status="completed", target_q=self.home_p, actual_q=self.rtde_r.getActualQ(), level="INFO")
+
+            # 6. Aktivacija Gripperja
+            log.event("robot_init", "INFO", "Zagon aktivacije gripperja.", cmd_id=self.init_id)
+            g_cid = ids.new_id("gripper")
+            self.gripper.activate()
+            self.gripper_close()
+            log.event("robot_init", "INFO", "Robot je popolnoma operativen.", cmd_id=self.init_id)
+            
+            return True
+
+        except Exception as e:
+            self.is_connected = False
+            # Počistimo vmesnike, da ne ostanejo polovične reference
+            self.rtde_c = None
+            self.rtde_r = None
+            self.rtde_io = None
+            self.dash = None
+            self.gripper = None
+            
+            log.event("robot_init", "ERROR", f"Povezovanje z robotom spodletelo: {e}", cmd_id=self.init_id)
+            print(f"[ERROR] Napaka pri povezovanju robota: {e}")
+            return False
+
+
+    def reconnect(self):
         try:
             self.rtde_c.reconnect()
             self.rtde_r.reconnect()
@@ -116,20 +160,22 @@ class MyRobot:
             return
    
     def _load_paleta(self, ime):
-        """
-        Naloži vse mreže za paleto (1 ali 2) in nastavi atribute self.paletaX_safe, ...
-        """
-
+        print(f"[DEBUG] _load_paleta({ime}) - začetek")
         suffixes = ["safe", "work", "kam", "kam_safe", "drop"]
         for suf in suffixes:
+            path_pose  = f"{self.mreze_dir}/mreza_paleta{ime}_{suf}.npy"
+            path_joint = f"{self.mreze_dir}/mreza_paleta{ime}_{suf}_joint.npy"
+            print(f"[DEBUG] Nalagam: {path_pose}")
             try:
-                pose = np.load(f"{self.mreze_dir}/mreza_paleta{ime}_{suf}.npy")
-                joints = np.load(f"{self.mreze_dir}/mreza_paleta{ime}_{suf}_joint.npy")
-            except FileNotFoundError:
+                pose   = np.load(path_pose)
+                joints = np.load(path_joint)
+                print(f"[DEBUG] OK: {path_pose} shape={pose.shape}")
+            except FileNotFoundError as e:
+                print(f"[DEBUG] Ni datoteke: {e}")
                 pose, joints = None, None
-            # nastavi atribute, npr. self.paleta1_safe, self.paleta1_safe_joint
             setattr(self, f"paleta{ime}_{suf}", pose)
             setattr(self, f"paleta{ime}_{suf}_joint", joints)
+        print(f"[DEBUG] _load_paleta({ime}) - končano")
 
 
     def homing(self):  

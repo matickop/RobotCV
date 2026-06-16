@@ -17,6 +17,7 @@ log = logger.Logger() # globalni logger
 cam = MyCamera(save_dir="zajeti") # objekt kamere
 robot = MyRobot("192.168.3.102") # objekt robota 
 pobrani_koti = [None]*8  # 4 koti prve palete + 4 druge
+gui = None
 
 # Pomožne funkcije za preverjanje zapolnjenosti, kreiranje csv datoteko...
 def koscki_pobrani():
@@ -417,10 +418,34 @@ def prepoznava_slik():
             log.camera(cmd_id=cid, method="capture_image", status="completed", level="INFO", extra={"session": session_cid, "step": "capture_image"})
             robot.ring_OFF()
             log.event("ring_off", "INFO", f"Turning ring OFF for piece [{i},{j}]", cmd_id=cid, extra={"session": session_cid, "step": "ring_off"})
+            # Po cam.capture_image() in robot.ring_OFF() — prikaži zajeto sliko:
+            if gui is not None:
+                try:
+                    raw = cv2.imread(cam.template_path)
+                    if raw is not None:
+                        from PIL import Image as PILImage
+                        rgb = cv2.cvtColor(raw, cv2.COLOR_BGR2RGB)
+                        gui.update_image(PILImage.fromarray(rgb))
+                except Exception:
+                    pass
 
             log.camera(cmd_id=cid, method="template_match_multiscale", status="started", level="INFO", extra={"session": session_cid, "step": "template_match"})
             slika, score_match, top_coarse, top_full = cam.template_match_multiscale(show=False)
             log.camera(cmd_id=cid, method="template_match_multiscale", status="completed", level="INFO", extra={"session": session_cid, "step": "template_match", "matched_piece": slika, "match_score": score_match})
+            
+            if gui is not None:
+                gui.update_match_panel(
+                    best_name=slika,
+                    best_score=score_match,
+                    top3=top_full[:3]
+                )
+            # Se povezava slike z GUI da se obarva koscek
+            if slika and slika != "template_prazna.png":
+                try:
+                    idx = int(slika.split(".")[0].split("_")[0])
+                    gui.set_piece_placed(idx)
+                except Exception:
+                    pass
 
             log.event("csv_write", "INFO", f"Template match score for piece [{i},{j}]: {score_match:.6f}", cmd_id=cid, extra={"session": session_cid, "matched_piece": slika, "match_score": score_match})
             with open(ime, "a", encoding="utf8") as f:
@@ -512,11 +537,11 @@ def generiranje_rotacije_slik(folder: str):
                 "180": rotate(img, 180)
             }
 
-        for angle, rotated_img in rotations.items():
-            new_filename = f"{idx}_{angle}.png"
-            save_path = os.path.join(folder, new_filename)
-            cv2.imwrite(save_path, rotated_img)
-            print(f"saved: {save_path}")
+            for angle, rotated_img in rotations.items():
+                new_filename = f"{idx}_{angle}.png"
+                save_path = os.path.join(folder, new_filename)
+                cv2.imwrite(save_path, rotated_img)
+                print(f"saved: {save_path}")
 
 
 def fine_move_tcp(dx=0.0, dy=0.0, dz=0.0):

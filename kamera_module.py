@@ -31,17 +31,10 @@ class MyCamera:
         log.event("camera_init", "INFO", f"Uporabljam {self.save_dir} za shranjevanje slik, v primeru da ga ni, kreiram novega.", cmd_id=self.init_id)
         os.makedirs(self.save_dir, exist_ok=True)
 
-        log.event("camera_init", "INFO", "Povezovanje z kamero...", cmd_id=self.init_id)
-        tlf = pylon.TlFactory.GetInstance() # inicializacija kamere
-        log.event("camera_init", "INFO", "Kreiram instanco cam", cmd_id=self.init_id)
-        self.cam = pylon.InstantCamera(tlf.CreateFirstDevice())
-        log.event("camera_init", "INFO", "Povezava z kamero vzpostavljena.", cmd_id=self.init_id)
-        log.event("camera_init", "INFO", "Nastavljam MaxNumBuffer na 20, da se zmanjša možnost timeoutov pri zajemu slike.", cmd_id=self.init_id)
-        self.cam.MaxNumBuffer = 20
-        time.sleep(1)
-        log.event("camera_init", "INFO", "Zaganjam aktivno povezavo s kamero", cmd_id=self.init_id)
-        self.cam.Open()
-        log.event
+        
+        log.event("camera_init", "INFO", "Ustvarjanje objekta kamere", cmd_id=self.init_id)
+        self.cam = None
+        self.is_connected = False
 
         log.event("camera_init", "INFO", "Nastavitev template_path in search_dir", cmd_id=self.init_id)
         self.template_path = None
@@ -53,6 +46,38 @@ class MyCamera:
         log.event("camera_init", "INFO", "Inicializacija kamere zaključena.", cmd_id=self.init_id)
 
     # ----------------------------------------------------------------------
+
+    def release(self):
+        """Zapre povezavo s kamero."""
+        try:
+            self.cam.Close()
+        except Exception as e:
+            log.event("camera_release", "ERROR", f"Napaka pri zapiranju kamere: {e}", cmd_id=self.init_id)
+        self.is_connected = False
+
+    def connect(self):
+        """Odpre kamero"""
+        try:
+            log.event("camera_init", "INFO", "Povezovanje z kamero...", cmd_id=self.init_id)
+            tlf = pylon.TlFactory.GetInstance() # inicializacija kamere
+            log.event("camera_init", "INFO", "Kreiram instanco cam", cmd_id=self.init_id)
+            self.cam = pylon.InstantCamera(tlf.CreateFirstDevice()) # vzpostavitev povezave s kamero
+            log.event("camera_init", "INFO", "Povezava z kamero vzpostavljena.", cmd_id=self.init_id)
+            log.event("camera_init", "INFO", "Nastavljam MaxNumBuffer na 20, da se zmanjša možnost timeoutov pri zajemu slike.", cmd_id=self.init_id)
+            self.cam.MaxNumBuffer = 20 # nastavimo število bufferjev
+            time.sleep(1)
+            log.event("camera_init", "INFO", "Zaganjam aktivno povezavo s kamero", cmd_id=self.init_id)
+            self.cam.Open() # odpre kamero, da je pripravljena na zajem slik
+
+            self.is_connected = True
+            return True
+        except Exception as e:
+            self.is_connected = False
+            self.cam = None
+            log.event("camera_init", "ERROR", f"Napaka pri povezovanju s kamero: {e}", cmd_id=self.init_id)
+            return False
+
+
     def preload_images(self):
         """
         Prednaloži slike v self.image_cache
@@ -93,16 +118,24 @@ class MyCamera:
         log.event("camera_init", "INFO", f"Prednaloženih {len(self.image_cache)} slik(multi-scale)", cmd_id=self.init_id)
 
 
-    def capture_image(self, filename: str = "zajeta_slika.png", timeout_ms: int = 20000) -> str:
+    def capture_image(self, filename: str = "zajeta_slika.png", timeout_ms: int = 2000) -> str:
         """
         Zajame eno sliko in jo shrani v self.save_dir
         Vrne pot do shranjene slike.
         """
-        
+        cam_id = ids.new_id("camera_capture")
+        log.event("camera_capture", "INFO", "Začetek zajema slike.", cmd_id=cam_id)
         try:
+            # Nastavitev parametrov kamere
+            self.cam.Width.SetValue(600)
+            self.cam.Height.SetValue(600)
+            self.cam.OffsetX.SetValue(256) 
+            self.cam.OffsetY.SetValue(118)
             iterations = 5
             for i in range(iterations):
+                print("tlele pride")
                 result = self.cam.GrabOne(timeout_ms)
+                print("tlele tut")
                 if result.GrabSucceeded():
                     img = pylon.PylonImage()
                     img.AttachGrabResultBuffer(result)
@@ -111,6 +144,7 @@ class MyCamera:
                     img.Release()
                     result.Release()
                     self.template_path = save_path
+                    log.camera(cmd_id=cam_id, method="capture_image", status="success")
                     print(f"[INFO] Slika zajeta in shranjena v: {save_path}")
                     return save_path
                 else:
@@ -238,17 +272,6 @@ class MyCamera:
 
     # ----------------------------------------------------------------------
 
-    def release(self):
-        """Zapre povezavo s kamero."""
-        try:
-            self.cam.Close()
-        except Exception as e:
-            print(f"[ERROR] Prišlo je do napake med prekinjanjem povezave s kamero: {e}")
-
-    def connect(self):
-        """Odpre kamero"""
-        self.cam.Open()
-
     def capture_image_celotna(self, filename: str = "zajeta_slika.png", save_dir: str = None, timeout_ms: int = 20000) -> str:
         """
         Zajame eno sliko in jo shrani v self.save_dir
@@ -257,8 +280,12 @@ class MyCamera:
         if save_dir is None:
             save_dir = "zajeta_celotna_slika"
             os.makedirs(save_dir, exist_ok=True)
+        # Nastavitev parametrov kamere
+        self.cam.Width.SetValue(700)
+        self.cam.Height.SetValue(700)
+        self.cam.OffsetX.SetValue(206) 
+        self.cam.OffsetY.SetValue(68)
         
-        self.cam.Open()
         result = self.cam.GrabOne(timeout_ms)
         if result.GrabSucceeded():
             img = pylon.PylonImage()
