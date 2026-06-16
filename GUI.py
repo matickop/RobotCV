@@ -88,7 +88,7 @@ class RobotTouchGUI(ctk.CTk):
         nav_center = tk.Frame(nav_frame, bg=BG, highlightthickness=0, bd=0)
         nav_center.pack(expand=True)
         for i, tab in enumerate(["Functions", "Vision", "Connections", "Settings"], 1):
-            ctk.CTkButton(nav_center, text=str(i), width=50, height=50,
+            ctk.CTkButton(nav_center, text=str(i), width=75, height=75,
                 font=("Arial", 20, "bold"),
                 command=lambda t=tab: self.prikazi_zavihek(t)).pack(pady=15)
 
@@ -389,20 +389,20 @@ class RobotTouchGUI(ctk.CTk):
         self.lock_frame.pack(expand=True, fill="both")
 
         frame_prikaz = tk.Frame(self.lock_frame, bg=BG, highlightthickness=0, bd=0)
-        frame_prikaz.pack(pady=(10, 5), anchor="center")
+        frame_prikaz.pack(pady=(15, 5), anchor="center")
 
         tk.Label(frame_prikaz, text="ZAŠČITENO OBMOČJE - Vnesite Admin PIN",
             font=("Arial", 16, "bold"), fg="white", bg=BG).pack(pady=5)
 
+        # Povečan prikazovalnik PIN številk, da paše k večji številčnici
         self.lbl_pin_display = ctk.CTkLabel(frame_prikaz, text="",
-            font=("Arial", 32, "bold"), fg_color="black", text_color="white",
-            width=240, height=50, corner_radius=5)
+            font=("Arial", 36, "bold"), fg_color="black", text_color="white",
+            width=360, height=60, corner_radius=6)
         self.lbl_pin_display.pack(pady=5)
 
-        frame_num_pad = tk.Frame(self.lock_frame, width=340, height=300,
-            bg=BG, highlightthickness=0, bd=0)
-        frame_num_pad.pack(pady=(5, 10), anchor="center")
-        frame_num_pad.pack_propagate(False)
+        # Okvir za številčnico (odstranjen pack_propagate, da gumbe lepo objame)
+        frame_num_pad = tk.Frame(self.lock_frame, bg=BG, highlightthickness=0, bd=0)
+        frame_num_pad.pack(pady=(5, 15), anchor="center")
 
         for r in range(4):
             frame_num_pad.grid_rowconfigure(r, weight=1)
@@ -418,10 +418,13 @@ class RobotTouchGUI(ctk.CTk):
                 b_color, h_color = "#2e7d32", "#1b5e20"
             else:
                 b_color, h_color = ctk.ThemeManager.theme["CTkButton"]["fg_color"]
-            ctk.CTkButton(frame_num_pad, text=tekst, font=("Arial", 24, "bold"),
+            
+            # TUKAJ: Nastavljena eksplicitna width in height za CTkButton + večji font (28)
+            ctk.CTkButton(frame_num_pad, text=tekst, font=("Arial", 28, "bold"),
                 fg_color=b_color, hover_color=h_color,
+                width=150, height=90,  # Masivni gumbi, idealni za touch screen
                 command=lambda t=tekst: self.pin_pad_pritisk(t)
-            ).grid(row=r, column=c, padx=5, pady=5, sticky="nsew")
+            ).grid(row=r, column=c, padx=6, pady=6, sticky="nsew")
 
         self.admin_content = tk.Frame(self.frame_settings, bg=BG,
             highlightthickness=0, bd=0)
